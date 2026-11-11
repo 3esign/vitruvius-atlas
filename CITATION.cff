@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: "If you use or reference this interactive 3D spatial edition of Vitruvius' De Architectura, please cite it as below."
+type: software
+title: "Vitruvius — The City of the Ten Books: An Interactive 3D Spatial & Bilingual Edition of De Architectura"
+authors:
+  - family-names: "Poturak"
+    given-names: "Semir"
+    name-suffix: "PhD"
+version: "2.0.0"
+date-released: "2026-11-11"
+license: MIT
+keywords:
+  - "Vitruvius"
+  - "De Architectura"
+  - "Ten Books on Architecture"
+  - "Architectural History"
+  - "Digital Humanities"
+  - "3D Spatial Humanities"
+  - "Classical Architecture"
+abstract: >-
+  An interactive 3D architectural atlas and bilingual scholarly edition of Marcus Vitruvius Pollio's
+  De Architectura (Books I–X), mapping all 729 passages of M. H. Morgan's 1914 Harvard University Press
+  English translation (pp. 3–319) alongside F. Krohn's 1912 Teubner Latin text onto 261 procedurally
+  constructed 3D architectural monuments governed by 132 verbatim Vitruvian geometric rules.

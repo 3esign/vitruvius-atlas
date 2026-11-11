@@ -1,0 +1,103 @@
+:root{
+  --paper:#f1ede3; --paper2:#ebe6da; --ink:#1c1a17; --mute:#857c6c; --rule:#d8d0bf;
+  --ghost:#d6cebd; --cin:#b83227; --ochre:#96742a; --tint:rgba(184,50,39,.11);
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;
+  --mono:"Cascadia Mono",Consolas,"SF Mono",Menlo,monospace;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:auto}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);-webkit-font-smoothing:antialiased}
+main{display:grid;grid-template-columns:minmax(400px,41%) 1fr;min-height:100vh}
+
+/* ── the text ─────────────────────────────────────────── */
+#text{padding:0 56px 70vh 0;display:flex;flex-direction:column;align-items:flex-end}
+#text>*{width:min(500px,100%)}
+#head{padding:13vh 0 9vh;min-height:92vh}
+.eyebrow{font:11px/1 var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--mute)}
+h1{font-weight:400;font-size:52px;line-height:1.04;letter-spacing:-.012em;margin:26px 0 26px}
+.lede{font-size:18.5px;line-height:1.58;margin:0 0 34px;color:#3a362f}
+#legend{list-style:none;margin:0;padding:18px 0 0;border-top:1px solid var(--rule);display:grid;gap:9px}
+#legend li{font-size:14.5px;line-height:1.35;display:grid;grid-template-columns:158px 1fr;gap:10px;align-items:baseline;color:#4a453c}
+#legend b{font-weight:400;color:var(--ink)}
+#legend .n{font:11px var(--mono);color:var(--mute);margin-left:7px}
+.counts{font:11.5px/1.7 var(--mono);color:var(--mute);margin:22px 0 0;letter-spacing:.02em}
+.counts b{color:var(--ink);font-weight:400}
+
+section{position:relative;padding:26px 0 30px;border-top:1px solid var(--rule);opacity:.42;transition:opacity .35s}
+section.on{opacity:1}
+section .adr{font:11px/1 var(--mono);letter-spacing:.16em;color:var(--cin);margin-bottom:13px;display:flex;justify-content:space-between}
+section .adr span{color:var(--mute);letter-spacing:.06em}
+section p{font-size:18px;line-height:1.66;margin:0;hyphens:auto}
+section.imp p{font-size:16.5px;color:#3a362f}
+section.imp p+p{margin-top:12px}
+section .src{font:10.5px var(--mono);color:var(--mute);letter-spacing:.1em;margin-right:8px}
+footer{border-top:1px solid var(--rule);padding:22px 0;font-size:13.5px;line-height:1.55;color:var(--mute)}
+i.gr{font-style:italic}
+
+/* a bound phrase */
+.tok{cursor:pointer;border-bottom:1.5px solid var(--cin);padding:1px 0;transition:background .12s;-webkit-box-decoration-break:clone;box-decoration-break:clone}
+.tok.k-D{border-bottom-style:dashed}
+.tok.k-R{border-bottom:1.5px dotted var(--ochre)}
+.tok.k-V,.tok.k-X{border-bottom:1px solid #b4ab99}
+.tok.k-W{border-bottom:1px solid var(--ink)}
+.tok.v3d{border-bottom-style:double;border-bottom-width:3px}
+.tok.rel{background:rgba(184,50,39,.06)}
+.tok.hot{background:var(--tint)}
+.tok.k-R.hot{background:rgba(150,116,42,.16)}
+.tok.k-V.hot,.tok.k-X.hot,.tok.k-W.hot{background:rgba(28,26,23,.08)}
+.sw{display:inline-block;width:34px;height:0;vertical-align:middle;margin-right:9px;transform:translateY(-2px)}
+
+/* ── the stage ────────────────────────────────────────── */
+#stage{position:sticky;top:0;height:100vh;border-left:1px solid var(--rule);background:
+  radial-gradient(120% 90% at 50% 40%,#f6f3ea 0%,var(--paper) 55%,var(--paper2) 100%);overflow:hidden}
+#draw,#ov{position:absolute;left:0;top:0;width:100%;height:calc(100% - 104px)}
+#ov{pointer-events:none}
+#frameName{position:absolute;left:34px;top:30px;font:11px/1 var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--mute);z-index:2;background:rgba(244,241,232,.9);padding:7px 10px;margin:-7px -10px}
+#frameName b{color:var(--ink);font-weight:400}
+#caption{position:absolute;left:0;right:0;bottom:0;height:104px;border-top:1px solid var(--rule);padding:19px 34px 0;background:rgba(241,237,227,.86)}
+#capMain{display:flex;align-items:baseline;gap:0;font-size:19px;white-space:nowrap;overflow:hidden}
+#capMain .a{font:12px var(--mono);letter-spacing:.14em;color:var(--cin)}
+#capMain .ar{color:var(--mute);margin:0 13px;font-size:15px}
+#capMain .f{font-style:italic}
+#capMain .mm{font:12.5px var(--mono);color:var(--mute)}
+#capMain .k{margin-left:auto;font:10.5px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--mute);padding-left:20px}
+#capMain .k.k-S{color:var(--cin)} #capMain .k.k-R{color:var(--ochre)}
+#capNote{font-size:14.5px;font-style:italic;color:#5a5448;margin-top:9px;line-height:1.4}
+#capMain.idle{font-size:15px;color:var(--mute);font-style:italic}
+
+/* drawing */
+#draw path,#draw circle{vector-effect:non-scaling-stroke;fill:none;stroke:var(--ink);stroke-linejoin:round;stroke-linecap:round;transition:stroke .3s,fill .2s,opacity .3s}
+#draw .ln{stroke-width:1.15}
+#draw .fine{stroke-width:.6}
+#draw .flute{stroke-width:.5;stroke-opacity:.62}
+#draw .silent{stroke-width:.6;stroke:#9d927c}
+#draw .dash{stroke-dasharray:5 4}
+#draw .axisl{stroke-width:.6;stroke-dasharray:14 4 2 4;stroke:#8a8172}
+#draw .sh{pointer-events:all}
+#draw .ns{stroke:none}
+#draw .occ{fill:var(--paper);stroke:none}
+#draw .ht{fill:url(#hatch);stroke:none;pointer-events:all}
+#draw .dot{fill:var(--ink);stroke:none}
+#draw .occ2{fill:var(--paper)}
+#draw g[data-part]{cursor:pointer}
+#draw g.ghost path,#draw g.ghost circle{stroke:var(--ghost)}
+#draw g.ghost .ht{fill:none} #draw g.ghost .dot{fill:var(--ghost)}
+#draw g.aux{opacity:0;pointer-events:none}
+#draw g.aux.on{opacity:.75} #draw g.aux.hot{opacity:1}
+#draw g.hot path,#draw g.hot circle{stroke:var(--cin)}
+#draw g.hot .ln{stroke-width:1.7}
+#draw g.hot .sh,#draw g.hot .ht{fill:var(--tint)}
+#draw g.hot .ns{stroke:none} #draw g.hot .occ{fill:var(--paper)} #draw g.hot .dot{fill:var(--cin)}
+#ov line{stroke:var(--cin);stroke-width:1}
+#ov line.ex{stroke-width:.6;stroke-opacity:.55}
+#ov text.d{font:italic 15px var(--serif);fill:var(--cin);paint-order:stroke;stroke:var(--paper);stroke-width:5px;stroke-linejoin:round}
+#ov text.lab{font:10px var(--mono);letter-spacing:.2em;fill:var(--mute)}
+
+@media (max-width:900px){
+  main{grid-template-columns:1fr}
+  #stage{order:-1;height:54vh;border-left:0;border-bottom:1px solid var(--rule);z-index:3}
+  #text{padding:0 22px 60vh;align-items:stretch}
+  #head{padding:6vh 0;min-height:0} h1{font-size:38px}
+  #caption{height:92px;padding:14px 18px 0} #draw,#ov{height:calc(100% - 92px)}
+  #capMain{font-size:15px;flex-wrap:wrap;white-space:normal} #capNote{display:none}
+}

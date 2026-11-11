@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="atlas-base" content=".">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-src 'self'; base-uri 'self'; form-action 'none'">
+<meta name="author" content="PhD Poturak Semir">
+<title>Vitruvius — The City of the Ten Books | PhD Poturak Semir</title>
+<meta name="description" content="An interactive 3D spatial edition and architectural atlas of Vitruvius' De Architectura (Ten Books on Architecture), aligning all 729 passages of M. H. Morgan (1914, pp. 3–319) with F. Krohn's Original Latin (1912) and 261 rule-built 3D monuments. Conceived and authored by PhD Poturak Semir.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23f7f4ec'/%3E%3Ccircle cx='32' cy='32' r='25' fill='none' stroke='%23b83227' stroke-width='2.5'/%3E%3Crect x='14' y='14' width='36' height='36' fill='none' stroke='%23201d19' stroke-width='2'/%3E%3Cpath d='M22 46L32 18L42 46' fill='none' stroke='%23201d19' stroke-width='2.5'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="app/city.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "ScholarlyArticle",
+  "headline": "Vitruvius — The City of the Ten Books: Interactive 3D Spatial Edition of De Architectura",
+  "author": { "@type": "Person", "name": "PhD Poturak Semir" },
+  "about": "Vitruvius, De Architectura (Morgan 1914 Harvard University Press & Krohn 1912 Teubner Latin)",
+  "inLanguage": ["en", "la"]
+}
+</script>
+<script type="importmap">{ "imports": { "three": "./vendor/three/build/three.module.js", "three/addons/": "./vendor/three/addons/" } }</script>
+</head>
+<body>
+<main id="stage">
+  <canvas id="c"></canvas>
+  <div id="crosshair" aria-hidden="true"></div>
+  <div id="labels"></div>
+
+  <header id="head">
+    <div class="head-top">
+      <a class="kicker" href="#/">Vitruvius · De Architectura</a>
+      <a class="sig-badge" href="#/about" title="Methodology, Sources &amp; Citation">PhD Poturak Semir</a>
+    </div>
+    <h1><a href="#/" class="title-link">The City of the Ten Books</a></h1>
+    <div id="by" role="tablist" aria-label="Arrange the city"></div>
+    <p id="bynote"></p>
+    <nav id="qnav" aria-label="Scholarly indexes">
+      <a href="#/tours">Tours</a>
+      <a href="#/books">Books I–X</a>
+      <a href="#/entities">Index</a>
+      <a href="#/plates">Plates (61)</a>
+      <button type="button" id="openPlateBtn" class="link-btn" title="Interactive Book III.5 Ionic Column Plate (78 sentence-to-stone bindings)">III.5 Ionic Plate</button>
+    </nav>
+  </header>
+
+  <div id="viewbar" role="toolbar" aria-label="Spatial camera modes">
+    <div id="camModes" class="seg">
+      <button type="button" data-cam="3d" aria-pressed="true" title="Scaenographia — Aerial 3D maquette (V)">3D Maquette</button>
+      <button type="button" data-cam="walk" aria-pressed="false" title="Ambulatio — First-person street walk at 1.70 m eye height (F)">Walk Street (FPS)</button>
+      <button type="button" data-cam="plan" aria-pressed="false" title="Ichnographia — True orthographic architectural plan">Plan Blueprint</button>
+    </div>
+    <button type="button" id="togglePanel" title="Collapse or expand scholarly panel (])" aria-label="Toggle scholarly panel">Panel ›</button>
+  </div>
+
+  <div id="tourbar" hidden></div>
+
+  <footer id="dock">
+    <div id="keys"></div>
+    <div id="scaleBar" hidden>
+      <div class="scale-line"><span id="scalePx"></span></div>
+      <div id="scaleTxt">100 pedes · 29.6 m</div>
+    </div>
+    <div id="sunDock" aria-label="Roman Solar Analemma (Book IX.7)">
+      <span class="sun-lbl" title="Latitude of Rome (41.9° N) — Book IX.7 Analemma">Sun · Rome</span>
+      <select id="sunSeason" aria-label="Solar season">
+        <option value="equinox">Equinox (IX.7)</option>
+        <option value="summer">Solstice +</option>
+        <option value="winter">Solstice −</option>
+      </select>
+      <input id="sunHour" type="range" min="6.25" max="18.25" step="0.05" value="15.25" aria-label="Solar hour">
+      <span id="sunReadout">15:15</span>
+      <button type="button" id="sunPlay" title="Animate Roman solar arc">▶</button>
+      <button type="button" id="soundBtn" title="Toggle Pythagorean harmonic chimes &amp; breeze (M)" aria-pressed="false">Sound Off</button>
+    </div>
+  </footer>
+
+  <div id="tip"></div>
+</main>
+
+<aside id="panel" aria-live="polite">
+  <div id="pbar">
+    <div class="search-wrap">
+      <input id="q" type="search" placeholder="Search English, Latin, page (p. 135), rule, term… (/)" aria-label="Search corpus">
+      <button type="button" id="qClear" hidden aria-label="Clear search">×</button>
+    </div>
+    <div id="langBar" class="seg" role="group" aria-label="Text edition">
+      <button type="button" data-lang="en" aria-pressed="true" title="M. H. Morgan (1914), Harvard University Press">EN</button>
+      <button type="button" data-lang="la" aria-pressed="false" title="F. Krohn (1912), Teubner Original Latin">LAT</button>
+      <button type="button" data-lang="bi" aria-pressed="false" title="Parallel Bilingual Edition (Morgan 1914 + Krohn 1912)">EN+LAT</button>
+    </div>
+  </div>
+  <div id="page"><p class="load">Building the city from the ten books…</p></div>
+  <footer id="colophon">
+    <span><b>Vitruvius · The City of the Ten Books</b> — Spatial Edition by <a href="#/about">PhD Poturak Semir</a></span>
+    <span id="stat"></span>
+  </footer>
+</aside>
+
+<div id="plateModal" class="modal" hidden role="dialog" aria-modal="true" aria-label="Book III.5 Interactive Ionic Plate">
+  <div class="modal-card">
+    <header class="modal-head">
+      <div>
+        <span class="kicker">Vitruvius · Book III, Chapter 5 · Morgan 1914, pp. 90–97</span>
+        <strong>One Column, Read into Being — 78 Verified Text-to-Geometry Bindings</strong>
+      </div>
+      <div class="modal-actions">
+        <a href="#/p/3.5.1" id="plateJumpCity" class="btn-sm">Locate III.5 in City</a>
+        <button type="button" id="closePlateBtn" class="btn-sm primary">Close Plate (Esc)</button>
+      </div>
+    </header>
+    <iframe id="plateFrame" title="Vitruvius III.5 Interactive Ionic Column Plate" loading="lazy"></iframe>
+  </div>
+</div>
+
+<div id="toast" hidden role="status" aria-live="polite"></div>
+<noscript><p class="nojs">The interactive 3D atlas requires JavaScript and WebGL.</p></noscript>
+<script type="module" src="app/city.js"></script>
+</body>
+</html>
