@@ -3,6 +3,10 @@
 // Ink lines are drawn where two faces meet at more than 38 degrees or where an edge has one face only:
 // curved things keep their facets under that angle, and surfaces that should read as one share their vertices.
 export const FT = 0.296, CU = 0.444, PI = Math.PI;
+// Detail of the cut stone: 1 on a desk, lower on a phone (columns one level plainer, rounds with fewer sides). Proportions never change.
+let DETAIL = 1;
+export const setDetail = v => { DETAIL = v; };
+const rn = n => (DETAIL >= 1 || n < 10 ? n : Math.max(8, Math.round(n * DETAIL / 2) * 2));
 export const C = {
   stone: [.925, .904, .862], marble: [.976, .968, .948], roof: [.79, .575, .455], wood: [.635, .505, .38], bronze: [.46, .545, .465],
   water: [.47, .665, .765], earth: [.775, .73, .635], green: [.51, .625, .445], dark: [.24, .23, .22], brick: [.785, .55, .44],
@@ -40,7 +44,7 @@ export class M {
   // box with its underside too (cornices, lintels, anything seen from below)
   slab(x, y, z, w, h, d, k = C.stone) { this.box(x, y, z, w, h, d, k); const x0 = x - w / 2, x1 = x + w / 2, z0 = z - d / 2, z1 = z + d / 2; this.quad([x0, y, z0], [x1, y, z0], [x1, y, z1], [x0, y, z1], k); }
   // vertical frustum, smooth sides
-  cyl(x, y, z, r0, r1, h, k = C.stone, n = 12, cap = true) {
+  cyl(x, y, z, r0, r1, h, k = C.stone, n = 12, cap = true) { n = rn(n);
     for (let i = 0; i < n; i++) {
       const a = i / n * 2 * PI, b = (i + 1) / n * 2 * PI, ca = Math.cos(a), sa = Math.sin(a), cb = Math.cos(b), sb = Math.sin(b);
       const A0 = [x + r0 * ca, y, z + r0 * sa], B0 = [x + r0 * cb, y, z + r0 * sb], A1 = [x + r1 * ca, y + h, z + r1 * sa], B1 = [x + r1 * cb, y + h, z + r1 * sb];
@@ -55,6 +59,15 @@ export class M {
     for (let i = 0; i < n; i++) { this.quad(P(a, i), P(a, i + 1), P(b, i + 1), P(b, i), k); this.tri(b, P(b, i), P(b, i + 1), k); this.tri(a, P(a, i + 1), P(a, i), k); }
   }
   beam(a, b, t, k = C.wood) { this.rod(a, b, t * .7071, k, 4); }
+  // squared timber from a to b, w across and h in the vertical plane through it (for an upright: w along x, h along z), its arrises chamfered
+  timber(a, b, w, h = w, k = C.wood, c = .14) {
+    const d = norm(sub(b, a)), up = Math.abs(d[1]) > .95 ? [0, 0, 1] : [0, 1, 0], e1 = norm(cross(d, up)), e2 = cross(e1, d), q = Math.min(w, h) * c, u = w / 2, v = h / 2;
+    const sec = [[u, v - q], [u - q, v], [-u + q, v], [-u, v - q], [-u, -v + q], [-u + q, -v], [u - q, -v], [u, -v + q]], P = (o, i) => add(o, add(mul(e1, sec[i % 8][0]), mul(e2, sec[i % 8][1])));
+    for (let i = 0; i < 8; i++) this.quad(P(a, i), P(a, i + 1), P(b, i + 1), P(b, i), k);
+    for (let i = 1; i < 7; i++) { this.tri(P(b, 0), P(b, i), P(b, i + 1), k); this.tri(P(a, 0), P(a, i + 1), P(a, i), k); }
+  }
+  // rope or chain through points
+  rope(pts, r = .02, k = C.dark) { for (let i = 0; i < pts.length - 1; i++) this.rod(pts[i], pts[i + 1], r, k, 3); }
   // round tube through points with level rings, no caps (trunks, bent pipes); rs = radius per point
   tube(pts, rs, k = C.wood, n = 6) {
     const P = (j, i) => { const a = i / n * 2 * PI; return [pts[j][0] + rs[j] * Math.cos(a), pts[j][1], pts[j][2] + rs[j] * Math.sin(a)]; };
@@ -74,7 +87,7 @@ export class M {
   }
   // surface of revolution round the vertical; prof = [[r,y(,colour)],...]; smooth round the axis, flat along the profile.
   // A profile listed top-down faces outwards. Ends closed down to y=0 when `skirt`.
-  lathe(x, y, z, prof, k = C.stone, n = 16, a0 = 0, a1 = 2 * PI, skirt = false) {
+  lathe(x, y, z, prof, k = C.stone, n = 16, a0 = 0, a1 = 2 * PI, skirt = false) { if (Math.abs(a1 - a0) > 6.2) n = rn(n);
     const P = (c, s, q) => [x + q[0] * c, y + q[1], z + q[0] * s], flat = Math.abs(a1 - a0) / n > .7;
     for (let i = 0; i < n; i++) {
       const a = a0 + (a1 - a0) * i / n, b = a0 + (a1 - a0) * (i + 1) / n, ca = Math.cos(a), sa = Math.sin(a), cb = Math.cos(b), sb = Math.sin(b);
@@ -245,9 +258,57 @@ function shaft(m, x, y0, z, h, rb, rt, k, nf, lod, off = 0) {
 // drum lying along z, smooth round
 const drum = (m, x, y, z, r, len, k, n) => { for (let i = 0; i < n; i++) { const a = i / n * 2 * PI, b = (i + 1) / n * 2 * PI, na = [Math.cos(a), Math.sin(a), 0], nb = [Math.cos(b), Math.sin(b), 0], P = (q, zz) => [x + r * q[0], y + r * q[1], zz], z0 = z - len / 2, z1 = z + len / 2;
   m.tri(P(na, z0), P(nb, z0), P(nb, z1), k, na, nb, nb); m.tri(P(na, z0), P(nb, z1), P(na, z1), k, na, nb, na); m.tri([x, y, z1], P(na, z1), P(nb, z1), k); m.tri([x, y, z0], P(nb, z0), P(na, z0), k); } };
+// prism over a star-shaped outline pts [[x,z],...] (listed by increasing angle), lofted through rows [[scale, y],...] bottom-up; capped both ends
+export function loft(m, x, y, z, pts, rows, k = C.stone) {
+  const n = pts.length, Q = (r, i) => [x + pts[i % n][0] * r[0], y + r[1], z + pts[i % n][1] * r[0]], b = rows[0], t = rows[rows.length - 1];
+  for (let j = 0; j < rows.length - 1; j++) for (let i = 0; i < n; i++) m.quad(Q(rows[j], i + 1), Q(rows[j], i), Q(rows[j + 1], i), Q(rows[j + 1], i + 1), k);
+  for (let i = 0; i < n; i++) { m.tri([x, y + t[1], z], Q(t, i + 1), Q(t, i), k); m.tri([x, y + b[1], z], Q(b, i), Q(b, i + 1), k); }
+}
+// IV.1.11-12 Corinthian capital, one D high. The abacus is a seventh of it, its diagonal twice the height, its faces drawn in by a ninth of their breadth;
+// the rest in three: the lower leaves, the second leaves, and the stalks whose helices run out to the corners of the abacus, the small spirals under the flower;
+// the flower on each face as large as the abacus is high. lod 1: one sheet per leaf; 2: leaves with a midrib, eyes to the helices; 3: lobed leaves, finer spirals.
+function corinthian(m, x, y0, z, D, rt, lod, k) {
+  const ah = D / 7, hb = D - ah, ra = D * Math.SQRT1_2, sg = 2 * ra / 9, cc = D * .045, fine = lod > 2, lip = ra - sg - D * .025;
+  // astragal, then the bell (kalathos) with its lip just inside the drawn-in faces of the abacus
+  turn(m, x, y0, z, [[rt, -D * .05], [rt * 1.07, -D * .042], [rt * 1.07, -D * .008], [rt, 0], [rt * 1.01, hb * .45], [rt * 1.07, hb * .74], [lip * .95, hb * .93], [lip, hb * .955], [lip, hb]], k, fine ? 16 : lod > 1 ? 12 : 10);
+  // the leaves: sheets rising round the bell and turning their tips over; lobes from the stepped breadths, a raised midrib between two hollows
+  const T = fine ? [[0, .6], [.18, .86], [.31, .74], [.47, 1], [.61, .82], [.75, .86], [.87, .52]] : lod > 1 ? [[0, .62], [.4, .98], [.63, .76], [.85, .55]] : [[0, .72], [.72, .8]];
+  const S = fine ? [[-1, .35], [-.5, -.1], [0, .55], [.5, -.1], [1, .35]] : lod > 1 ? [[-1, 0], [0, .6], [1, 0]] : [[-1, 0], [1, 0]];
+  const leaf = (a, ya, yb, r0, out, wd) => { const ca = Math.cos(a), sa = Math.sin(a), hh = yb - ya, th = D * .035, P = (r, yy, s) => [x + r * ca - s * sa, y0 + yy, z + r * sa + s * ca];
+    const R = T.map(([t, w]) => S.map(([s, d]) => P(r0 + out * t * t * t + d * th * (1 - t * .5), ya + hh * t, s * w * wd))), tip = P(r0 + out * 1.3, yb - hh * .02, 0);
+    for (let j = 0; j < R.length - 1; j++) for (let i = 0; i < S.length - 1; i++) m.quad(R[j][i], R[j][i + 1], R[j + 1][i + 1], R[j + 1][i], k);
+    const e = R[R.length - 1]; for (let i = 0; i < S.length - 1; i++) m.tri(e[i], e[i + 1], tip, k); };
+  for (let i = 0; i < 8; i++) { leaf(i * PI / 4, 0, hb / 3, rt * 1.03, D * .1, D * .25); leaf(i * PI / 4 + PI / 8, D * .08, hb * 2 / 3, rt * 1.0, D * .13, D * .24); }
+  // sheet along a path [[u, y, halfwidth],...] in the vertical plane of direction a; the width lies across that plane (a rolled scroll)
+  const sheet = (a, pts, off = 0) => { const ca = Math.cos(a), sa = Math.sin(a), P = (u, yy, s) => [x + u * ca - (s + off) * sa, y0 + yy, z + u * sa + (s + off) * ca];
+    for (let j = 0; j < pts.length - 1; j++) { const p = pts[j], q = pts[j + 1]; m.quad(P(p[0], p[1], -p[2]), P(p[0], p[1], p[2]), P(q[0], q[1], q[2]), P(q[0], q[1], -q[2]), k); } };
+  const spiral = (ue, ye, rv, turns, nseg, w, dir = 1) => Array.from({ length: nseg + 1 }, (_, j) => { const f = j / nseg, t = PI / 2 - dir * f * turns * 2 * PI, r = rv * (1 - .62 * f); return [ue + r * Math.cos(t), ye + r * Math.sin(t), w]; });
+  const ns = fine ? 16 : lod > 1 ? 10 : 5, nt = fine ? 4 : lod > 1 ? 3 : 1;
+  for (let i = 0; i < 4; i++) { const a = PI / 4 + i * PI / 2, ca = Math.cos(a), sa = Math.sin(a), uc = ra * Math.SQRT2 - cc * .7, rv = D * .085, ue = uc - rv * 1.05, ye = hb - rv * 1.12, wv = D * .05;
+    // the stalk (caulicolus) between the second leaves, its calyx, and the helix: a tendril under the abacus rolled into an eye at the corner
+    const s0 = [rt * 1.0, hb * .5], s1 = [rt * 1.1, hb * .72], c1 = [ue - D * .16, hb - D * .005], sp = spiral(ue, ye, rv, 1.35, ns, wv);
+    const tend = Array.from({ length: nt + 1 }, (_, j) => { const f = j / nt, g = 1 - f; return [g * g * s1[0] + 2 * f * g * c1[0] + f * f * sp[0][0], g * g * s1[1] + 2 * f * g * c1[1] + f * f * sp[0][1], wv * (.8 + .2 * f)]; });
+    if (lod > 1) { const U = q => [x + q[0] * ca, y0 + q[1], z + q[0] * sa]; m.rod(U(s0), U(s1), D * .04, k, fine ? 6 : 4);
+      m.lathe(U(s1)[0], y0 + s1[1] - D * .02, U(s1)[2], [[D * .085, D * .07], [D * .06, D * .04], [D * .04, 0]], k, fine ? 8 : 5); } // the calyx the helices spring from
+    sheet(a, [...tend, ...sp.slice(1)]);
+    if (lod > 1) m.ring([x + ue * ca, y0 + ye, z + ue * sa], [[ca, 0, sa], UP], rv * .3, 0, wv * 1.5, k, fine ? 8 : 6);
+    // on the faces: the small spirals meeting under the flower, and the flower itself, as large as the abacus is high
+    if (lod > 1) { const b = i * PI / 2, cb = Math.cos(b), sb = Math.sin(b), uf = lip + D * .015, nh = fine ? 9 : 5;
+      for (const s of [-1, 1]) { const qe = D * .08, ye = hb - D * .058, r0 = D * .045, P = (q, d) => [x + (uf + d) * cb - s * q[0] * sb, y0 + q[1], z + (uf + d) * sb + s * q[0] * cb];
+        const pts = [[D * .27, hb * .74], [D * .19, hb * .88], [D * .13, hb * .955], ...Array.from({ length: nh + 1 }, (_, j) => { const f = j / nh, t = PI / 2 + f * 2.4 * PI, r = r0 * (1 - .6 * f); return [qe + r * Math.cos(t), ye + r * Math.sin(t)]; })];
+        for (let j = 0; j < pts.length - 1; j++) m.quad(P(pts[j], -D * .02), P(pts[j], D * .02), P(pts[j + 1], D * .02), P(pts[j + 1], -D * .02), k); }
+      // the flower: five petals round a boss, standing out from the middle of the face
+      const uo = ra - sg + ah * .05, F = (r, t, d = 0) => { const q = r * Math.cos(t), v = r * Math.sin(t); return [x + (uo + d) * cb - q * sb, y0 + hb + ah / 2 + v, z + (uo + d) * sb + q * cb]; }, np = fine ? 5 : 4;
+      for (let j = 0; j < 2 * np; j++) { const t0 = j * PI / np + PI / 2, t1 = (j + 1) * PI / np + PI / 2, r0 = j % 2 ? ah * .22 : ah * .5, r1 = j % 2 ? ah * .5 : ah * .22; m.tri(F(0, 0, ah * .22), F(r0, t0, j % 2 ? ah * .12 : 0), F(r1, t1, j % 2 ? 0 : ah * .12), k); } } }
+  // the abacus, its faces drawn in by a ninth, the corners cut, a plain band under an ovolo
+  const nf = fine ? 6 : lod > 1 ? 4 : 2, pts = [];
+  for (let f = 0; f < 4; f++) { const a = f * PI / 2 - PI / 2, n = [Math.cos(a), Math.sin(a)], t = [-n[1], n[0]];
+    for (let j = 0; j <= nf; j++) { const s = -1 + 2 * j / nf, u = ra - sg * (1 - s * s), v = s * (ra - cc); pts.push([n[0] * u + t[0] * v, n[1] * u + t[1] * v]); } }
+  loft(m, x, y0 + hb, z, pts, lod > 1 ? [[.965, 0], [.965, ah * .5], [.985, ah * .6], [1, ah * .78], [1, ah]] : [[1, 0], [1, ah]], k);
+}
 export function col(m, x, y, z, D, H, order = 'ionic', k = C.stone, n = 12, o = {}) { // o.base === false: no base (a capital shown on a stump)
   const ft = H / FT, dim = ft <= 15 ? 5 / 6 : ft <= 20 ? 5.5 / 6.5 : ft <= 30 ? 6 / 7 : ft <= 40 ? 6.5 / 7.5 : 7 / 8;
-  const rb = D / 2; let rt = rb * dim, yb = y, yt = y + H, lod = D >= .5 ? 2 : D >= .28 ? 1 : 0; if (n < 12 && lod) lod--; else if (n >= 24 && lod > 1) lod = 3;
+  const rb = D / 2; let rt = rb * dim, yb = y, yt = y + H, lod = D >= .5 ? 2 : D >= .28 ? 1 : 0; if (n < 12 && lod) lod--; else if (n >= 24 && lod > 1) lod = 3; if (DETAIL < 1 && lod > 1) lod--;
   const ns = lod > 2 ? 16 : 10, big = D >= .5 && lod > 0, based = o.base !== false; let nf = 0, off = 0;
   if (order === 'doric') { const hc = D / 2, aw = D * 1.08; nf = big ? 20 : 0;
     if (lod) { const r1 = rt + D * .012; turn(m, x, yt - hc, z, [[rt, 0], [rt, hc * .3], [r1, hc * .3], [r1, hc * .36], ...ovolo(r1, hc * .36, aw * .49, hc * .64).slice(1), [aw * .49, hc * 2 / 3]], k, ns); m.slab(x, yt - hc / 3, z, aw, hc / 3, aw, k); }
@@ -263,21 +324,8 @@ export function col(m, x, y, z, D, H, order = 'ionic', k = C.stone, n = 12, o = 
       turn(m, x, y + D / 6, z, [...torus(rb * 1.27, 0, tL, lod > 2), [rb * 1.2, tL], ...(lod > 1 ? [[rb * 1.11, tL + (u - tL - tU) * .45]] : []), [rb * 1.13, u - tU], ...(lod > 1 ? torus(rb * 1.13, u - tU, tU, false).slice(1) : [[rb * 1.19, u - tU * .7], [rb * 1.19, u - tU * .3], [rb * 1.13, u]]), [rb, u]], k, ns); }
     else { m.box(x, y, z, 1.5 * D, D / 6, 1.5 * D, k); m.cyl(x, y + D / 6, z, rb * 1.36, rb * 1.18, D / 3, k, 10); }
     if (based) yb += D / 2;
-    if (order === 'corinthian') { const y0 = yt - D, ra = D * .625, ah = D * .15;
-      if (lod) { turn(m, x, y0, z, [[rt * 1.08, -D * .045], [rt * 1.08, 0], [rt * 1.02, D * .5], [rt * 1.2, D * .73], [ra * .92, D * .85]], k, ns); // astragal and bell
-        // IV.1.12: two rows of leaves, the stalks and volutes above them running out to the corners of the abacus
-        const leaf = (a, ya, yb2, out, wd) => { const ca = Math.cos(a), sa = Math.sin(a), r0 = rt * 1.03, P = (r, yy, s) => [x + r * ca - s * sa, y0 + yy, z + r * sa + s * ca], hh = yb2 - ya;
-          const q = lod > 1 ? [[r0, ya, wd * .86], [r0 + out * .1, ya + hh * .5, wd], [r0 + out * .5, ya + hh * .88, wd * .8], [r0 + out, yb2, wd * .42]] : [[r0, ya, wd * .9], [r0 + out * .3, ya + hh * .75, wd * .9], [r0 + out, yb2, wd * .42]];
-          for (let j = 0; j < q.length - 1; j++) m.quad(P(q[j][0], q[j][1], -q[j][2]), P(q[j][0], q[j][1], q[j][2]), P(q[j + 1][0], q[j + 1][1], q[j + 1][2]), P(q[j + 1][0], q[j + 1][1], -q[j + 1][2]), k);
-          const e = q[q.length - 1]; m.tri(P(e[0], e[1], -e[2]), P(e[0], e[1], e[2]), P(e[0] + out * .06, e[1] - hh * .17, 0), k); };
-        for (let i = 0; i < 8; i++) { leaf(i * PI / 4, D * .02, D * .32, D * .1, D * .15); leaf(i * PI / 4 + PI / 8, D * .2, D * .58, D * .13, D * .13); }
-        for (let i = 0; i < 4; i++) { const a = PI / 4 + i * PI / 2, ca = Math.cos(a), sa = Math.sin(a), rc = ra * 1.414 - D * .115;
-          if (lod > 1) { m.ring([x + rc * ca, y0 + D * .755, z + rc * sa], [[ca, 0, sa], UP], D * .085, 0, D * .07, k, lod > 2 ? 12 : 8); m.beam([x + rt * 1.1 * ca, y0 + D * .56, z + rt * 1.1 * sa], [x + (rc - D * .05) * ca, y0 + D * .7, z + (rc - D * .05) * sa], D * .042, k); }
-          else m.quad([x + (rc - D * .1) * ca, y0 + D * .65, z + (rc - D * .1) * sa], [x + (rc + D * .1) * ca, y0 + D * .65, z + (rc + D * .1) * sa], [x + (rc + D * .1) * ca, y0 + D * .85, z + (rc + D * .1) * sa], [x + (rc - D * .1) * ca, y0 + D * .85, z + (rc - D * .1) * sa], k); }
-        // IV.1.11: abacus a seventh of the height, its sides drawn in
-        const cv = ra * .86, pts = [[-ra, ra], [0, cv], [ra, ra], [cv, 0], [ra, -ra], [0, -cv], [-ra, -ra], [-cv, 0]]; m.prism(pts.map(p => [x + p[0], z + p[1]]), yt - ah, ah, k);
-        for (let i = 0; i < 8; i++) { const p = pts[i], q = pts[(i + 1) % 8]; m.tri([x, yt - ah, z], [x + q[0], yt - ah, z + q[1]], [x + p[0], yt - ah, z + p[1]], k); } }
-      else { m.cyl(x, y0, z, rt, rt * 1.5, D * .85, k, 10, false); m.box(x, yt - ah, z, 2 * ra, ah, 2 * ra, k); }
+    if (order === 'corinthian') { const y0 = yt - D, ah = D / 7;
+      if (lod) corinthian(m, x, y0, z, D, rt, lod, k); else { m.cyl(x, y0, z, rt, rt * 1.5, D - ah, k, 10, false); m.box(x, yt - ah, z, D * 1.3, ah, D * 1.3, k); }
       yt -= D; }
     else { const hc = D / 3, aw = D * 1.06, ah = hc * .35;
       if (lod) { // III.5.5-7: abacus, cushion, volutes hanging beside the shaft, echinus between them

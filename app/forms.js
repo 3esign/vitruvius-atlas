@@ -4,7 +4,10 @@ import { M, C, col, court, bakeAO, FT, CU, PI } from './mesh.js';
 const S = C.stone, W = C.wood, R = C.roof, cos = Math.cos, sin = Math.sin;
 const each = (n, f) => { for (let i = 0; i < n; i++) f(i, n > 1 ? i / (n - 1) : 0); };
 const slab = (m, w, d, k = C.shade, h = .2) => m.box(0, 0, 0, w, h, d, k);
-const wheelX = (m, x, y, z, Rr, w = .25, k = W, sp = 6) => { m.ring([x, y, z], 'x', Rr, Rr * .82, w, k, 14); m.ring([x, y, z], 'x', Rr * .16, 0, w * 1.3, k, 8); each(sp, i => { const a = i / sp * 2 * PI; m.beam([x, y, z], [x, y + Rr * .85 * sin(a), z + Rr * .85 * cos(a)], Rr * .09, k); }); };
+// spoked wheel turning about the x axis: felloes, spokes, a long nave with its hoops; cart wheels (R < 1.6) get an iron tyre
+const wheelX = (m, x, y, z, Rr, w = .25, k = W, sp = 6) => { const tyre = Rr < 1.6, n = tyre ? 12 : 16; m.ring([x, y, z], 'x', Rr * (tyre ? .985 : 1), Rr * .84, w, k, n); if (tyre) m.ring([x, y, z], 'x', Rr, Rr * .975, w * 1.06, C.lead, n);
+  m.ring([x, y, z], 'x', Rr * .17, 0, w * 2.2, k, 8); if (!tyre) for (const s of [-1, 1]) m.ring([x + s * w * .95, y, z], 'x', Rr * .185, Rr * .15, w * .2, C.dark, 8);
+  each(sp, i => { const a = (i + .5) / sp * 2 * PI, A = [x, y + Rr * .15 * sin(a), z + Rr * .15 * cos(a)], B = [x, y + Rr * .86 * sin(a), z + Rr * .86 * cos(a)]; tyre ? m.beam(A, B, Rr * .09, k) : m.timber(A, B, Rr * .075, Rr * .1, k); }); };
 // base course round a block, broken at its doors; ops as for M.wbox
 const plinth = (m, x, y, z, w, d, ops = {}, h = .34, pr = .06, k = C.shade) => {
   const cut = (lo, hi, list, f) => { let seg = [[lo, hi]]; for (const o of list || []) if (o.kind === 'door' && !(o.v > .05)) { const c = f(o), hw = o.w / 2 + (o.fr ? Math.max(.08, o.w / 7) * 1.5 : 0) + .01; seg = seg.flatMap(([a, b]) => c + hw <= a || c - hw >= b ? [[a, b]] : [[a, c - hw], [c + hw, b]].filter(q => q[1] - q[0] > .05)); } return seg; };
@@ -369,7 +372,7 @@ function sphaera(m, p) { const k = p.kind || 'zodiac', r = 3; slab(m, 9, 9, C.sh
   m.ring(c, 'y', r + .15, r, .08, C.dark, 32); m.ring(c, [e1, e2], r, r - .08, .1, C.bronze, 32); const ob = 24 * PI / 180, z2 = [0, cos(lat + ob), sin(lat + ob)]; m.ring(c, [e1, z2], r - .12, r - .2, .7, C.gold, 32);
   each(12, i => { const a = i * PI / 6, q = r - .1; m.box(c[0] + q * cos(a), c[1] + q * sin(a) * z2[1] - .1, c[2] + q * sin(a) * z2[2], .16, .2, .16, C.dark); }); if (k === 'sun') m.ball((r - .16) * cos(PI / 32), c[1] - .3 + (r - .16) * sin(PI / 32) * z2[1], (r - .16) * sin(PI / 32) * z2[2], .3, C.gold, 10);
 }
-const add3 = (a, b, s) => [a[0] + b[0] * s, a[1] + b[1] * s, a[2] + b[2] * s];
+const add3 = (a, b, s) => [a[0] + b[0] * s, a[1] + b[1] * s, a[2] + b[2] * s], norm3 = a => { const l = Math.hypot(...a) || 1; return a.map(v => v / l); };
 
 // ------------------------------------------------------------------ water (VIII)
 function spring(m, p) { const k = p.kind || 'clear', wc = { hot: [.72, .78, .72], deadly: [.25, .3, .32], acid: [.62, .74, .5], stone: [.9, .93, .92], salt: [.8, .86, .86] }[k] || C.water; slab(m, 13, 11, C.earth, .12);
@@ -383,7 +386,13 @@ function spring(m, p) { const k = p.kind || 'clear', wc = { hot: [.72, .78, .72]
   if (k === 'hot') each(5, i => m.ball(-1 + i * .5, 1.2 + i * .5, .5 + (i % 2) * .6, .35 + i * .08, C.marble, 6));
   if (k === 'taste') each(4, i => m.tree(-4.5 + i * 3, 4.2, 2.6));
 }
-function wellOne(m, x, z) { m.cyl(x, 0, z, 1.1, 1.1, .9, S, 12, false); m.ring([x, .9, z], 'y', 1.1, .8, .12, S, 12); m.cyl(x, 0, z, .8, .8, .3, C.dark, 12); for (const s of [-1, 1]) m.box(x + s * 1.25, 0, z, .2, 2.6, .2, W); m.ring([x, 2.5, z], 'x', .13, 0, 2.9, W, 6); m.rod([x, 2.4, z], [x, 1.2, z], .02, C.dark, 4); m.cyl(x, .95, z, .2, .26, .3, W, 6); }
+// well-head (puteal): a turned kerb with base and lip, the water dark inside; over it two posts, a windlass with its crank, the rope and a hooped bucket
+function wellOne(m, x, z, gear = true) {
+  m.lathe(x, 0, z, [[.8, 1.02], [1.12, 1.02], [1.15, .96], [1.08, .9], [1.04, .86], [1.04, .2], [1.12, .14], [1.16, 0]], S, 14); m.ring([x, .62, z], 'y', .8, 0, .04, C.dark, 14); m.lathe(x, 0, z, [[.8, 1.02], [.8, .64]], S, 14);
+  if (!gear) return; for (const s of [-1, 1]) { m.timber([x + s * 1.28, 0, z], [x + s * 1.28, 2.62, z], .2, .2); m.box(x + s * 1.28, 2.36, z, .26, .1, .26, C.dark); }
+  m.ring([x, 2.5, z], 'x', .13, 0, 2.9, W, 6); for (const q of [-.06, 0, .06]) m.ring([x + q, 2.5, z], 'x', .15, .13, .05, C.dark, 6);
+  m.timber([x + 1.45, 2.5, z], [x + 1.45, 2.15, z + .1], .05, .05, C.dark); m.timber([x + 1.45, 2.15, z + .1], [x + 1.7, 2.15, z + .1], .05, .05, W); // the crank
+  m.rope([[x, 2.37, z], [x, 1.32, z]], .018); m.lathe(x, 1.02, z, [[.2, .3], [.24, .02], [.21, 0]], W, 8); for (const yy of [1.08, 1.27]) m.ring([x, yy, z], 'y', .235, .22, .04, C.dark, 8); m.rope([[x - .22, 1.32, z], [x, 1.42, z], [x + .22, 1.32, z]], .012); }
 function well(m, p) { slab(m, p.kind === 'linked' ? 18 : 8, 7, C.earth, .12); if (p.kind === 'linked') { each(3, i => wellOne(m, -6 + i * 6, 0)); m.box(0, .12, 0, 12, .4, .9, S); } else wellOne(m, 0, 0); }
 function pit(m) { const s = 3 * FT * 3, dp = 5 * FT; m.box(0, 0, 0, s + 4, dp, s + 4, C.earth); m.box(0, dp - .02, 0, s, .04, s, C.dark); m.frame(0, 0, 0, s + .5, s + .5, .25, dp + .05, C.earth); m.dome(0, dp, 0, .8, C.bronze, 10, 4, .7); m.box(s / 2 + 1, dp, 0, 1.4, .1, s, C.thatch); }
 function chorobates(m) { const l = 20 * FT; slab(m, l + 3, 4, C.earth, .12); for (const s of [-1, 1]) { m.box(s * (l / 2 - .3), .12, 0, .22, 1.3, .5, W); m.beam([s * (l / 2 - .3), .3, 0], [s * (l / 2 - 1.5), 1.35, 0], .1); m.rod([s * (l / 2 - .9), 1.4, .28], [s * (l / 2 - .9), .5, .28], .015, C.dark, 4); m.cyl(s * (l / 2 - .9), .4, .28, .05, 0, .12, C.lead, 5); } m.box(0, 1.42, 0, l, .22, .3, W); m.box(0, 1.645, 0, 5 * FT, .01, .06, C.water); }
@@ -427,13 +436,52 @@ function plate(m, p) { const k = p.kind || 'six'; const base = (w, d) => { m.box
 function stela(m) { m.box(0, 0, 0, 4, .25, 3, C.shade); m.box(0, .25, 0, 2, .4, 1, S); m.box(0, .65, 0, 1.5, 3.2, .4, C.marble); m.gable(0, 3.85, 0, 1.7, .5, .4, C.marble, C.marble); each(7, i => m.box(0, 1.1 + i * .36, .21, 1.1, .1, .02, C.shade)); }
 
 // ------------------------------------------------------------------ machines (X)
-function load(m, x, y, z, s = 1.2) { m.box(x, y, z, s * 1.5, s, s, C.marble); }
-function crane(m, p) { const k = p.kind || 'trispast'; slab(m, 12, 14, C.earth, .12); const top = [0, 9.5, 2.2];
-  if (k === 'polyspast') { const t = [0, 10.5, 2.6]; m.beam([0, .12, 0], t, .42); for (const [x, z] of [[-5, -4], [5, -4], [-4.5, 5], [4.5, 5]]) { m.rod(t, [x, .12, z], .03, C.dark, 4); m.cyl(x, .12, z, .12, .1, .5, W, 5); } each(3, i => m.box(t[0], t[1] - .9 - i * .45, t[2] + .25, .9, .32, .32, W)); each(3, i => m.rod([-.3 + i * .3, t[1] - 1.8, t[2] + .25], [-.3 + i * .3, 3.2, t[2] + .25], .02, C.dark, 4)); m.box(0, 2.9, t[2] + .25, .9, .32, .32, W); load(m, 0, 1.6, t[2] + .25); m.box(0, .12, -.9, .5, .9, .5, W); return; }
-  for (const s of [-1, 1]) { m.beam([s * 2.4, .12, 0], top, .38); m.rod(top, [s * 3.5, .12, -6], .03, C.dark, 4); m.box(s * 1.9, 1.3, .32, .3, .5, .5, W); } m.box(0, top[1] - .2, top[2], .9, .3, .3, C.bronze); m.box(0, top[1] - 1, top[2] + .3, .7, .5, .25, W); each(3, i => { m.ring([-.2 + i * .2, top[1] - .75, top[2] + .3], 'x', .19, 0, .06, C.bronze, 10); m.ring([-.2 + i * .2, 3.5, top[2] + .3], 'x', .16, 0, .06, C.bronze, 10); });
-  each(3, i => m.rod([-.2 + i * .2, top[1] - 1, top[2] + .3], [-.2 + i * .2, 3.7, top[2] + .3], .02, C.dark, 4)); m.box(0, 3.3, top[2] + .3, .6, .4, .25, W); m.rod([0, 3.3, top[2] + .3], [0, 2.4, top[2] + .3], .04, C.dark, 4); load(m, 0, 1.2, top[2] + .3); m.rod([0, top[1] - 1, top[2]], [0, 1.5, .4], .02, C.dark, 4);
-  if (k === 'drum') { m.ring([0, 2.6, .5], 'x', .22, 0, 5.4, W, 8); m.ring([0, 2.6, .5], 'x', 2.2, 2, 1.5, W, 16); each(8, i => { const a = i * PI / 4; m.beam([0, 2.6, .5], [0, 2.6 + 2.05 * sin(a), .5 + 2.05 * cos(a)], .14); m.box(0, 2.6 + 2.1 * sin(a + .2), .5 + 2.1 * cos(a + .2), 1.4, .08, .5, W); }); for (const s of [-1, 1]) m.box(s * 2.6, .12, .5, .3, 2.7, .5, W); }
-  else { m.ring([0, 1.5, .4], 'x', .2, 0, 4, W, 8); for (const s of [-1, 1]) each(2, i => m.beam([s * 1.2, 1.5, .4], [s * 1.2, 1.5 + (i ? .9 : 0), .4 + (i ? 0 : .9)], .09)); }
+// ------------------------------------------------------------------ machine parts
+// a squared stone with the holes for the iron shears (X.2.2)
+function load(m, x, y, z, s = 1.2) { m.box(x, y, z, s * 1.5, s, s, C.marble); m.box(x, y + s * .02, z, s * 1.52, s * .04, s * 1.02, C.shade); for (const q of [-1, 1]) m.box(x + q * s * .76, y + s * .62, z, .02, s * .16, s * .16, C.dark); }
+// pulley block: cheeks enclosing n sheaves side by side on one pin along x, centred at (x, y, z); an iron strap and eye over it. Returns the x of each sheave.
+function pblock(m, x, y, z, n, r = .17, eye = true) { const t = .045, g = .08, L = n * g + (n + 1) * t, x0 = x - L / 2, xs = [];
+  each(n + 1, i => m.box(x0 + t / 2 + i * (t + g), y - r * 1.3, z, t, r * 2.6, r * 2.5, W));
+  each(n, i => { const sx = x0 + t + g / 2 + i * (t + g); xs.push(sx); m.ring([sx, y, z], 'x', r, r * .28, g * .75, C.bronze, 10); });
+  m.ring([x, y, z], 'x', r * .2, 0, L + .06, C.dark, 6); m.box(x, y + r * 1.3, z, L + .04, .03, r * .7, C.dark); for (const s of [-1, 1]) m.box(x + s * (L / 2 + .012), y - r * .2, z, .025, r * 1.5, r * .7, C.dark);
+  if (eye) m.ring([x, y + r * 1.3 + .08, z], 'z', .085, .05, .035, C.dark, 8); return xs; }
+// windlass along x between x0 and x1 at (y, z): turned drum, iron hoops, socket-pieces, handspikes in their holes, rope wound in the middle
+function windlass(m, x0, x1, y, z, r = .15, spikes = 2) { m.ring([(x0 + x1) / 2, y, z], 'x', r, 0, x1 - x0, W, 8);
+  for (const x of [x0, x1]) { m.ring([x + (x < x1 ? .12 : -.12), y, z], 'x', r * 1.08, r * .9, .05, C.dark, 8); m.timber([x, y - .3, z - .25], [x, y + .3, z - .25], .26, .22, W); }
+  for (const x of [x0 + .32, x1 - .32]) each(spikes, i => { const a = .5 + i * PI / spikes; m.timber([x, y - 1.15 * sin(a), z - 1.15 * cos(a)], [x, y + 1.15 * sin(a), z + 1.15 * cos(a)], .07, .07, W); });
+  each(5, i => m.ring([(x0 + x1) / 2 - .24 + i * .12, y, z], 'x', r + .025, r, .1, C.dark, 8)); }
+// ground stake with a stay made fast to it
+const stake = (m, x, z, lean = [0, 0]) => m.timber([x - lean[0] * .4, .05, z - lean[1] * .4], [x, .75, z], .12, .12, W);
+function crane(m, p) { const k = p.kind || 'trispast', g = .12; slab(m, 12, 14, C.earth, g);
+  if (k === 'polyspast') { // X.2.8-10: one timber held by stays on four sides, cheeks under the stays, blocks of three rows of sheaves, the artemon at the foot, three rows of men hauling
+    const t = [0, 10.4, 2.6], d = norm3([t[0], t[1] - g, t[2]]); m.timber([0, g, 0], t, .42, .42); m.timber([-.3, g, 0], [.3, g, 0], .3, .3); m.timber([0, g, -.5], [0, g, .5], .3, .3);
+    const ch = add3(t, d, -1.1); for (const s of [-1, 1]) m.timber(add3([s * .26, 0, 0], ch, 1), add3(add3([s * .26, 0, 0], ch, 1), d, .9), .1, .3); m.timber(add3([-.4, 0, 0], ch, 1), add3([.4, 0, 0], ch, 1), .18, .12);
+    for (const [x, z] of [[-5, -4], [5, -4], [-4.5, 5], [4.5, 5]]) { m.rope([add3(t, d, -.2), [x, .7, z]], .028); stake(m, x, z, [x / 5, z / 5]); }
+    const zb = t[2] + .3, yu = t[1] - 1.75, yl = 3.2, xu = pblock(m, 0, yu, zb, 3, .16), xl = pblock(m, 0, yl, zb, 3, .16);
+    m.rope([[0, yu + .3, zb], add3(ch, [0, -.1, 0], 1)], .03); m.timber([-.4, yu + .42, zb], [.4, yu + .42, zb], .1, .15, W);
+    for (let i = 0; i < 3; i++) for (const s of [-1, 1]) m.rope([[xu[i], yu, zb + s * .16], [xl[i], yl, zb + s * .16]], .018);
+    m.rope([[-.2, yl - .45, zb], [-.75, 2.65, zb]], .03); m.rope([[.2, yl - .45, zb], [.75, 2.65, zb]], .03); load(m, 0, 1.45, zb);
+    const xa = pblock(m, 0, .55, -.62, 3, .16, false); for (let i = 0; i < 3; i++) { m.rope([[xu[i], yu, zb - .16], [xa[i], .55, -.46]], .018); m.rope([[xa[i], .4, -.78], [-.9 + i * .9, 1.1, -4.4]], .022); m.figure(-.9 + i * .9, g, -4.6 - (i % 2) * .5, 1.7, C.shade); }
+    return; }
+  // X.2.1-2: two timbers bolted at the head and spread at the foot, kept up by stays; at the head a block of two sheaves, below a block of one with the iron shears; the windlass between the legs
+  const H = 9.4, zt = 2.2, L = s => [[s * 2.4, g, 0], [s * .22, H, zt]], at = (s, y) => { const [a, b] = L(s), f = (y - a[1]) / (b[1] - a[1]); return [a[0] + (b[0] - a[0]) * f, y, a[2] + (b[2] - a[2]) * f]; };
+  for (const s of [-1, 1]) { const [a, b] = L(s); m.timber(a, b, .36, .36); m.box(a[0], g, a[2], 1, .14, .8, W); stake(m, s * 3.6, -6.2, [s * .6, -1]); m.rope([[s * .25, H - .25, zt - .1], [s * 3.6, .72, -6.2]], .028); stake(m, s * 3.2, 6.2, [s * .5, 1]); m.rope([[s * .25, H - .3, zt + .15], [s * 2.4, 3.2, 5.2], [s * 3.2, .72, 6.2]], .022); }
+  m.timber([-.55, H + .02, zt], [.55, H + .02, zt], .3, .3); m.ring([0, H - .32, zt], 'x', .05, 0, 1, C.dark, 6); for (const s of [-1, 1]) m.ring([s * .3, H - .32, zt], 'x', .09, 0, .03, C.dark, 6); // the bolt at the head
+  for (const y of [H * .45, H * .75]) { const a = at(-1, y), b = at(1, y); m.timber([a[0] + .1, y, a[2] - .2], [b[0] - .1, y, b[2] - .2], .14, .16); }
+  const drum = k === 'drum', nu = drum ? 4 : 2, nl = drum ? 2 : 1, yu = H - .8, yl = 3.4, zb = zt + .32, xu = pblock(m, 0, yu, zb, nu, .17), xl = pblock(m, 0, yl, zb, nl, .17);
+  m.rope([[0, yu + .3, zb], [0, H - .15, zt + .1]], .035);
+  for (let i = 0; i < nu; i++) { const j = Math.min(nl - 1, Math.floor(i * nl / nu)); m.rope([[xu[i], yu, zb + (i % 2 ? .17 : -.17)], [xl[j], yl, zb + (i % 2 ? .17 : -.17)]], .018); }
+  // X.2.2 the iron shears: two arms pinned like scissors, hung by short chains from the lower block, their points in the holes of the stone
+  const yp = 2.72; m.ring([0, yp, zb], 'z', .05, 0, .12, C.dark, 6);
+  for (const s of [-1, 1]) { m.rope([[0, yl - .45, zb], [s * .3, yp + .25, zb]], .015); m.rope([[s * .3, yp + .25, zb + s * .02], [-s * .55, yp - .22, zb + s * .02], [-s * .8, 2.18, zb + s * .02], [-s * .9, 2.05, zb + s * .02]], .03); } load(m, 0, 1.2, zb);
+  if (drum) { // X.2.5-7: an axle-tree in the sockets carrying a great drum set at one side, in which men tread; the doubled ropes made fast right and left on the axle
+    const y = 2.6, z = .5, R = 2.2, a = at(1, y), xd = 3.15; m.ring([(4.45 - a[0] - .2) / 2, y, z], 'x', .2, 0, 4.65 + a[0], W, 8);
+    for (const s of [-1, 1]) { m.timber([s * a[0], y - .35, z - .3], [s * a[0], y + .35, z - .3], .3, .26, W); m.ring([xd + s * .75, y, z], 'x', R, R - .14, .14, W, 16); m.ring([xd + s * .75, y, z], 'x', .32, .2, .3, W, 8);
+      each(8, i => { const t = i * PI / 4 + (s > 0 ? 0 : PI / 8); m.timber([xd + s * .75, y + .3 * sin(t), z + .3 * cos(t)], [xd + s * .75, y + (R - .1) * sin(t), z + (R - .1) * cos(t)], .1, .12); }); m.rope([[s * .9, y + .2, z], [xu[s > 0 ? nu - 1 : 0], yu, zb - .17]], .022);
+      m.timber([4.3, g, z + s * 1.3], [4.3, y + .1, z], .22, .22); } m.box(4.3, y - .2, z, .3, .5, .4, W);
+    each(22, i => { const t = i / 22 * 2 * PI, rr = R - .19; m.box(xd, y + rr * sin(t) - .03, z + rr * cos(t), 1.64, .06, .16, W); });
+    m.figure(xd, y - R + .1, z + .25, 1.7, C.shade); return; }
+  const a = at(1, 1.3); windlass(m, -a[0] - .1, a[0] + .1, 1.3, a[2] - .32); m.rope([[0, 1.45, a[2] - .32], [xu[0], yu, zb - .17]], .022);
 }
 function roller(m, p) { const k = p.kind; slab(m, 14, 8, C.earth, .12);
   if (k === 'chersiphron') { m.ring([0, 1.02, 0], 'x', .9, 0, 7, C.marble, 16); m.frame(0, .9, 0, 8, 2.6, .25, .25, W); for (const s of [-1, 1]) m.ring([s * 3.75, 1.02, 0], 'x', .12, 0, .6, C.dark, 6); m.beam([0, 1, 1.3], [0, 1, 4], .14); return; }
@@ -459,11 +507,33 @@ function ship(m, p) { m.box(0, 0, 0, 22, .2, 11, C.water); m.at(0, .2, 0, 0, () 
     for (const [x, z] of [[7.2, 0], [-7.2, 0], [-.6, 2.1], [-.6, -2.1]]) m.rod([.5, 9.7, 0], [x, 1.42, z], .018, C.dark, 3); for (const s of [-1, 1]) m.rod([.56, 8.5, s * 3], [-3.5, 1.4, s * 2], .015, C.dark, 3);
     for (const s of [-1, 1]) m.beam([-6, 2.2, s * 1.7], [-7.4, -.1, s * 2.5], .16); m.box(-5.4, 1.28, 0, 2, .92, 2.4, W); m.slab(-5.4, 2.2, 0, 2.3, .08, 2.7, W); } }); }
 function wheel(m, p) { const k = p.kind || 'tympanum', Rr = k === 'tympanum' ? 2.5 : k === 'mill' ? 2.2 : 3.6, ay = Rr + .9; slab(m, 13, 10, C.earth, .12);
-  if (k === 'chain') { wellOne(m, 0, 0); for (const s of [-1, 1]) m.box(s * 1.6, 0, 0, .3, 6.4, .3, W); m.ring([0, 6.1, 0], 'x', .16, 0, 3.8, W, 8); wheelX(m, 0, 6.1, 0, .9, .3); for (const z of [-.9, .9]) { m.rod([0, 6.1, z], [0, .4, z], .04, C.dark, 4); each(6, i => m.cyl(0, 1 + i * .85, z, .16, .2, .3, C.bronze, 6)); } m.box(2.6, 3.4, 0, 2.4, .25, .8, W); return; }
-  m.box(0, 0, 0, 4, .5, 2 * Rr + 1.4, C.water); for (const s of [-1, 1]) { m.beam([s * 1.5, .12, -1.2], [s * 1.5, ay, 0], .28); m.beam([s * 1.5, .12, 1.2], [s * 1.5, ay, 0], .28); } m.ring([0, ay, 0], 'x', .16, 0, k === 'mill' ? 8 : 3.6, W, 8);
-  if (k === 'tympanum') { m.ring([0, ay, 0], 'x', Rr, .3, 1, W, 18); each(8, i => m.box(.52, ay + Rr * .8 * sin(i * PI / 4), Rr * .8 * cos(i * PI / 4), .06, .36, .36, C.dark)); m.box(1.9, ay - .5, 0, 2.4, .3, .8, W); }
-  else { for (const s of [-1, 1]) wheelX(m, s * .45, ay, 0, Rr, .12, W, 8); each(16, i => { const a = i * PI / 8; m.at(0, ay + Rr * .96 * sin(a), Rr * .96 * cos(a), 0, () => { m.box(0, -.22, 0, .8, .44, .44, W); if (k !== 'bucket') m.box(0, .22 * Math.sign(sin(a) || 1), 0, 1.1, .5, .06, C.thatch); }); }); m.box(2, ay + Rr - .9, 0, 2.6, .25, .7, W); }
-  if (k === 'mill') { m.ring([2.8, ay, 0], 'x', 1.3, 1.1, .3, W, 16); m.ring([3.6, ay + 1.35, 0], 'y', 1, .8, .28, W, 14); m.cyl(3.6, ay + 1.5, 0, .1, .1, 1.5, C.dark, 6); m.cyl(3.6, ay + 2.6, 0, 1, 1, .35, S, 14); m.cyl(3.6, ay + 3, 0, 1, 1, .3, C.shade, 14); m.cyl(3.6, ay + 3.5, 0, .2, .8, 1, W, 4); m.box(3.6, 0, 0, 2.8, ay + 2.5, 2.8, S); }
+  if (k === 'chain') { // X.4.4: a double iron chain round the axle of the wheel, bronze buckets on it that tip over into the reservoir above the axle
+    wellOne(m, 0, 0, false); const ya = 6.1; for (const s of [-1, 1]) { m.timber([s * 1.6, 0, -.6], [s * 1.6, ya + .3, 0], .3, .3); m.timber([s * 1.6, 0, .6], [s * 1.6, ya + .3, 0], .3, .3); m.box(s * 1.6, ya + .3, 0, .4, .3, .5, W); }
+    m.timber([-1.6, ya * .55, 0], [1.6, ya * .55, 0], .18, .2); m.ring([0, ya, 0], 'x', .14, 0, 3.8, W, 8); m.ring([0, ya, 0], 'x', .3, .14, .5, C.dark, 6); wheelX(m, -1.1, ya, 0, .9, .2, W, 6);
+    for (const s of [-1, 1]) { for (const q of [-.12, .12]) m.rope([[q, ya, s * .3], [q, .3, s * .3]], .02); each(6, i => { const yy = 1 + i * .82, t = yy + (s > 0 ? .32 : 0); m.lathe(0, yy, s * .3, s > 0 ? [[.17, .32], [.15, .02], [0, 0]] : [[0, .3], [.15, .28], [.17, 0]], C.bronze, 7); m.rope([[-.17, t, s * .3], [0, yy + (s > 0 ? .5 : -.18), s * .3], [.17, t, s * .3]], .012); }); }
+    m.box(1.3, ya - .55, -.45, 2.4, .1, .9, W); for (const s of [-1, 1]) m.box(1.3, ya - .55, -.45 + s * .43, 2.4, .3, .05, W); m.timber([2.4, 0, -.45], [2.4, ya - .55, -.45], .14, .14); return; }
+  // the race: stone banks and the water between them
+  m.box(0, 0, 0, 4, .4, 2 * Rr + 1.4, C.water); for (const s of [-1, 1]) m.box(s * 2.1, 0, 0, .3, .7, 2 * Rr + 1.4, S);
+  for (const s of [-1, 1]) { m.timber([s * 1.5, .12, -1.2], [s * 1.5, ay, 0], .28, .28); m.timber([s * 1.5, .12, 1.2], [s * 1.5, ay, 0], .28, .28); m.timber([s * 1.5, ay * .4, -.75], [s * 1.5, ay * .4, .75], .16, .18); m.box(s * 1.5, ay - .25, 0, .36, .42, .5, W); } // trestles with their bearings
+  m.ring([k === 'mill' ? 2.2 : 0, ay, 0], 'x', .16, 0, k === 'mill' ? 8 : 3.6, W, 8); // X.4.1 the axle
+  if (k === 'tympanum') { // X.4.1-2: a drum of boards, eight crosspieces within, six-inch apertures in its face, holes like a dovecot by the axle on one side; the trough beneath
+    m.ring([0, ay, 0], 'x', Rr, Rr - .05, .9, W, 18); for (const s of [-1, 1]) m.ring([s * .47, ay, 0], 'x', Rr + .02, .2, .06, W, 18);
+    each(8, i => { const a = i * PI / 4, b = a + PI / 8; for (const s of [-1, 1]) m.timber([s * .52, ay + .25 * sin(a), .25 * cos(a)], [s * .52, ay + (Rr - .06) * sin(a), (Rr - .06) * cos(a)], .05, .12); m.box(0, ay + (Rr + .005) * sin(b) - .09, (Rr + .005) * cos(b), .4, .18, .03, C.dark); m.ring([.53, ay + .5 * sin(b), .5 * cos(b)], 'x', .07, 0, .02, C.dark, 6); });
+    for (const s of [-1, 1]) m.ring([s * 1.1, ay, 0], 'x', .18, .15, .1, C.dark, 8); // its ends shod with iron hoops
+    const yt = ay - 1.15; m.box(1.1, yt, 0, 1.6, .06, .8, W); for (const s of [-1, 1]) m.box(1.1, yt, s * .38, 1.6, .3, .05, W); m.box(2.1, yt - .35, 0, .5, .06, .8, W); for (const s of [-1, 1]) m.box(2.1, yt - .35, s * .38, .5, .3, .05, W); m.timber([1.7, 0, -.45], [1.7, yt, -.45], .12, .12); m.timber([1.7, 0, .45], [1.7, yt, .45], .12, .12); return; }
+  // X.4.3, X.5.1: a great wheel with cubical boxes round its circumference; on the river, floatboards on its faces struck by the current
+  for (const s of [-1, 1]) wheelX(m, s * .45, ay, 0, Rr, .12, W, 8); for (const i of [0, 4, 8, 12]) m.timber([.5, ay + Rr * .9 * sin(i * PI / 8 + PI / 16), Rr * .9 * cos(i * PI / 8 + PI / 16)], [-.5, ay + Rr * .9 * sin(i * PI / 8 + PI / 16), Rr * .9 * cos(i * PI / 8 + PI / 16)], .06, .06);
+  each(16, i => { const a = i * PI / 8, ca = cos(a), sa = sin(a), tg = [0, ca, -sa];
+    m.at(0, ay + Rr * .96 * sa - .22, Rr * .96 * ca, 0, () => { m.box(0, 0, 0, .8, .44, .44, W); m.box(0, .44, 0, .7, .005, .34, C.dark); });
+    if (k !== 'bucket') { const c = add3([0, ay + Rr * .9 * sa, Rr * .9 * ca], tg, .25); m.timber(c, add3(c, [0, sa, ca], Rr * .26), 1.1, .07); } });
+  m.box(2, ay + Rr - .9, 0, 2.6, .1, .7, W); for (const s of [-1, 1]) m.box(2, ay + Rr - .9, s * .33, 2.6, .25, .04, W); m.timber([2.9, 0, 0], [2.9, ay + Rr - .9, 0], .18, .18); // the reservoir the boxes empty into
+  if (k === 'mill') { // X.5.2: a toothed drum on the end of the axle, set on edge, turning a smaller toothed drum laid flat on the millstone's spindle; the hopper over it
+    const xg = 2.8, yh = ay + 1.35, xh = 3.6; m.ring([xg, ay, 0], 'x', 1.3, 1.08, .22, W, 18); each(4, i => m.timber([xg, ay - 1.15 * sin(i * PI / 4), -1.15 * cos(i * PI / 4)], [xg, ay + 1.15 * sin(i * PI / 4), 1.15 * cos(i * PI / 4)], .1, .12));
+    each(24, i => { const a = i / 24 * 2 * PI; m.box(xg + .17, ay + 1.2 * sin(a) - .05, 1.2 * cos(a), .14, .1, .1, W); }); // the cogs stand out from its face
+    for (const yy of [yh - .2, yh + .2]) m.ring([xh, yy, 0], 'y', .8, .1, .06, W, 12); each(10, i => { const a = i / 10 * 2 * PI; m.cyl(xh + .72 * cos(a), yh - .2, .72 * sin(a), .045, .045, .4, W, 5, false); }); // the lantern of staves
+    m.cyl(xh, yh - .3, 0, .09, .09, 1.6, C.dark, 6); const yd = ay + 2.4; for (const a of [-1, 1]) for (const b of [-1, 1]) m.timber([xh + a * 1.25, 0, b * 1.25], [xh + a * 1.25, yd, b * 1.25], .22, .22); m.box(xh, yd - .2, 0, 2.8, .2, 2.8, W);
+    m.cyl(xh, yd, 0, 1, 1, .35, S, 16); m.cyl(xh, yd + .35, 0, .96, .9, .25, C.shade, 16); m.cyl(xh, yd + .6, 0, .2, .2, .02, C.dark, 8); // the nether and the running millstone
+    for (const a of [-1, 1]) for (const b of [-1, 1]) m.timber([xh + a * .85, yd, b * .85], [xh + a * .55, ay + 3.7, b * .55], .08, .08); m.cyl(xh, ay + 3.1, 0, .12, .8, 1.4, W, 4); m.cyl(xh, ay + 3, 0, .06, .12, .1, W, 4); }
 }
 function screw(m) { const l = 6.4, r = l / 16, a = [-(4 / 5 * l) / 2, .7, 0], b = [(4 / 5 * l) / 2, .7 + 3 / 5 * l, 0]; slab(m, 9, 6, C.earth, .12); m.box(-3.4, .12, 0, 3, .6, 3.4, C.water); m.rod(a, b, .14, W, 8); const d = [4 / 5, 3 / 5, 0], e1 = [-3 / 5, 4 / 5, 0], e2 = [0, 0, 1], P = t => { const c = add3(a, d, t * l), an = t * 5 * 2 * PI; return [c[0] + r * (e1[0] * cos(an)), c[1] + r * e1[1] * cos(an), c[2] + r * sin(an)]; };
   each(80, i => m.beam(P(i / 80), P((i + 1) / 80), .09, C.thatch)); each(80, i => { const Q = t => { const q = P(t + .1 / 5 * 2.5); return q; }; if (i % 2) m.beam(Q(i / 80), add3(a, d, (i / 80 + .05) * l), .05, W); }); m.ring(add3(a, d, l * .82), [e1, e2], r + .06, r, l * .3, W, 12);
@@ -471,14 +541,81 @@ function screw(m) { const l = 6.4, r = l / 16, a = [-(4 / 5 * l) / 2, .7, 0], b 
 function pump(m) { slab(m, 8, 6, C.shade); m.box(0, .2, 0, 5, .5, 2.4, W); for (const s of [-1, 1]) { m.cyl(s * 1.5, .7, 0, .42, .42, 1.5, C.bronze, 12); m.rod([s * 1.5, .9, 0], [s * .4, 1.5, 0], .12, C.bronze, 6); m.rod([s * 1.5, 2.2, 0], [s * 1.5, 3.3, 0], .05, C.dark, 5); } m.cyl(0, .7, 0, .6, .6, 1.2, C.bronze, 12); m.cyl(0, 1.9, 0, .66, .12, .8, C.bronze, 12, false); m.cyl(0, 2.7, 0, .12, .1, 2.6, C.bronze, 8); m.box(0, .7, -.9, .3, 2.8, .3, W); m.beam([-1.9, 3.4, -.5], [1.9, 3.4, -.5], .16); m.rod([-1.5, 3.3, 0], [-1.5, 3.4, -.5], .05, C.dark, 4); m.rod([1.5, 3.3, 0], [1.5, 3.4, -.5], .05, C.dark, 4); }
 function organ(m) { slab(m, 8, 5, C.shade); m.box(0, .2, 0, 4.4, .5, 2, W); m.box(0, .7, 0, 1.4, 1.5, 1.2, C.bronze); m.box(0, 2.2, 0, 1.7, .12, 1.5, C.bronze); for (const s of [-1, 1]) { for (const z of [-.4, .4]) m.box(s * 1.7, .7, z, .12, 2.1, .12, W); each(4, i => m.box(s * 1.7, 1 + i * .45, 0, .1, .1, .8, W)); m.cyl(s * 1.7, .7, 0, .28, .28, 1.2, C.bronze, 10); m.beam([s * 1.7, 2.9, 0], [s * 2.8, 2.5, 0], .1); m.rod([s * 1.7, 1.9, 0], [s * 1.7, 2.9, 0], .04, C.dark, 4); m.rod([s * 1.4, 1, 0], [s * .7, 1.2, 0], .07, C.bronze, 5); } m.cyl(0, 2.3, 0, .2, .2, .5, C.bronze, 8); m.box(0, 2.8, 0, 3, .4, .7, W); each(13, i => m.cyl(-1.32 + i * .22, 3.2, -.1, .07, .07, 2.4 - i * .13, C.bronze, 6)); each(13, i => m.box(-1.32 + i * .22, 2.8, .45, .14, .08, .3, C.marble)); }
 function hodometer(m) { slab(m, 9, 6, C.sand, .12); const r = 2 * FT; for (const s of [-1, 1]) for (const z of [-1.2, 1.2]) wheelX(m, s * .95, r + .12, z, r, .14, W, 8); m.box(0, r + .12, 0, 1.5, .2, 3.6, W); m.box(0, r + .32, 0, 1.6, 1.1, 2.4, W); m.box(0, r + 1.42, .4, 1, .9, 1, W); m.ring([.3, r + 1.9, .4], 'x', .4, .1, .12, C.bronze, 16); m.ring([0, r + 2.4, .4], 'y', .45, 0, .14, C.bronze, 16); m.cyl(0, r + 1.42, -.7, .2, .28, .4, C.bronze, 8); m.beam([0, r + .2, 1.8], [0, r + .5, 4.2], .12); m.box(0, r + .45, 4.1, 1.6, .12, .12, W); }
-function catapult(m, p) { const F = .22; slab(m, 9, 9, C.earth, .12);
-  if (p.kind === 'frame') { for (const s of [-1, 1]) { m.box(0, .9, s * .7, 8, .3, .3, W); for (const x of [-3.6, 3.6]) m.box(x, .12, s * .7, .3, .8, .3, W); } for (const x of [-3.4, 3.4]) { m.ring([x, 1.4, 0], 'z', .2, 0, 2, W, 8); each(2, i => m.beam([x, 1.4, .9], [x + (i ? .8 : 0), 1.4 + (i ? 0 : .8), .9], .07)); } m.box(0, 1.2, 0, 1.8, 1, 1.2, W); for (const s of [-1, 1]) { m.cyl(s * .5, 1.1, 0, .16, .16, 1.3, C.thatch, 8); m.rod([s * .5, 1.8, 0], [s * 3.4, 1.5, 0], .025, C.dark, 4); } return; }
-  const y = .12 + 12 * F; m.box(0, .12, 0, 8 * F, .25, 8 * F, W); m.box(0, .12, 0, F * 1.2, 12 * F, F * 1.2, W); for (const [x, z] of [[1, 0], [-1, 0], [0, -1]]) m.beam([x * 3.5 * F, .3, z * 3.5 * F], [0, 8 * F, 0], F * .7);
-  m.at(0, y, 0, 0, () => { for (const yy of [0, 5 * F]) m.box(0, yy, 2 * F, 6.5 * F, F, 1.75 * F, W); for (const s of [-1, 1]) { m.box(s * 3 * F, F, 2 * F, 5 / 12 * F * 2, 4 * F, 1.5 * F, W); m.box(s * .9 * F, F, 2 * F, .5 * F, 4 * F, 1.5 * F, W); m.cyl(s * 2 * F, -.3 * F, 2 * F, F / 2, F / 2, 6.6 * F, C.thatch, 8); m.beam([s * 2 * F, 3 * F, 2 * F], [s * 7 * F, 3 * F, -1.5 * F], F * .5); m.rod([s * 7 * F, 3 * F, -1.5 * F], [0, 3 * F, -9 * F], .02, C.dark, 4); } m.box(0, 2.4 * F, -7.5 * F, F * 1.4, F * .8, 19 * F, W); m.box(0, 3.2 * F, -6 * F, F * .9, F * .4, 16 * F, C.thatch); m.rod([0, 3.7 * F, -8 * F], [0, 3.7 * F, 2.5 * F], .03, C.dark, 5); m.ring([0, 2.6 * F, -17.6 * F], 'x', F * .7, 0, 3 * F, W, 8); });
+// box on any orthonormal axes A, B, D: centre c, full sizes a, b, d along them
+const obox = (m, c, A, B, D, a, b, d, k = W) => { const ax = [A, B, D], sz = [a / 2, b / 2, d / 2], P = q => [0, 1, 2].map(n => c[n] + A[n] * q[0] * sz[0] + B[n] * q[1] * sz[1] + D[n] * q[2] * sz[2]);
+  for (let i = 0; i < 3; i++) for (const s of [-1, 1]) { const Q = (x, y) => { const q = [0, 0, 0]; q[i] = s; q[(i + 1) % 3] = x; q[(i + 2) % 3] = y; return P(q); }; m.oq(Q(-1, -1), Q(1, -1), Q(1, 1), Q(-1, 1), k, ax[i].map(t => t * s)); } };
+// the frame of an engine whose stock rises at th towards +z from o; every length counted in its module s: u along the stock, v square to it, w across
+const tilt = (m, o, th, s) => { const d = [0, sin(th), cos(th)], n = [0, cos(th), -sin(th)], X = [1, 0, 0], L = (u, v, w = 0) => [o[0] + w * s, o[1] + (d[1] * u + n[1] * v) * s, o[2] + (d[2] * u + n[2] * v) * s];
+  return { d, n, L, B: (u, v, w, a, b, c, k = W) => obox(m, L(u, v, w), d, n, X, a * s, b * s, c * s, k), T: (a, b, w, h = w, k = W) => m.timber(L(...a), L(...b), w * s, h * s, k),
+    R: (a, b, r, k = W, nn = 8) => m.rod(L(...a), L(...b), r * s, k, nn), D: (u, v, w, R, h, k = C.bronze, nn = 10) => m.ring(L(u, v, w), [X, d], R * s, 0, h * s, k, nn), // a disc lying in the stock's plane
+    P: (pts, v0, v1, k = W) => { const cu = pts.reduce((q, p) => q + p[0], 0) / pts.length, cw = pts.reduce((q, p) => q + p[1], 0) / pts.length; // plate over an outline [[u, w],...] between v0 and v1
+      pts.forEach((a, i) => { const b = pts[(i + 1) % pts.length], o = sub3(L((a[0] + b[0]) / 2, v0, (a[1] + b[1]) / 2), L(cu, v0, cw)); m.oq(L(a[0], v0, a[1]), L(b[0], v0, b[1]), L(b[0], v1, b[1]), L(a[0], v1, a[1]), k, o);
+        for (const [v, sg] of [[v0, -1], [v1, 1]]) m.oq(L(cu, v, cw), L(a[0], v, a[1]), L(b[0], v, b[1]), L(b[0], v, b[1]), k, n.map(t => t * sg)); }); } }; };
+const sub3 = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+// X.10.2-5 the scorpio, every member counted in holes, the hole a ninth of the arrow. Shown spanned: the slider drawn back by the windlass, the arrow laid in the trough.
+function catapult(m, p) { const F = .22, g = .12; slab(m, 9, 9, C.earth, g);
+  if (p.kind === 'frame') { // X.12.1-2: long beams with socket-pieces and windlasses; midway the beams cut away to a framing in which the capital is wedged; the strings looped through its holes and wound on the windlasses each side, tightened with handspikes till both sides give one sound
+    const yb = .9, l = 7.6, xw = 3.4, yw = yb + .42;
+    for (const s of [-1, 1]) { for (const [a, b] of [[-l / 2, -.32], [.32, l / 2]]) m.timber([a, yb, s * .62], [b, yb, s * .62], .3, .36); // the beam, cut away midway
+      for (const x of [-3.3, -1.1, 1.1, 3.3]) m.timber([x, g, s * .62], [x, yb - .18, s * .62], .2, .2); m.timber([-3.3, .5, s * .62], [3.3, .5, s * .62], .12, .14); // its trestle legs and a rail
+      for (const x of [-xw, xw]) m.box(x, yb + .18, s * .62, .42, .26, .34, W); } // socket-pieces nailed on
+    for (const x of [-.24, .24]) { m.box(x, yb - .3, 0, .16, 1.42, 1.66, W); for (const s of [-1, 1]) m.box(x * 1.62, yb - .3, s * .62, .1, .62, .3, C.dark); } // the capital: its two boards standing in the framing, and the wedges that hold it
+    for (const s of [-1, 1]) { m.box(0, yb - .3, s * .76, .32, 1.42, .14, W); for (const x of [-.33, .33]) m.ring([x, yb + .32, s * .36], 'x', .19, .1, .1, C.bronze, 10); m.box(.39, yb + .29, s * .36, .02, .06, .42, C.dark); } // sideposts; the bronze boxes round the holes and their bolts
+    for (const x of [-xw, xw]) { m.ring([x, yw, 0], 'z', .14, 0, 1.5, W, 8); for (const s of [-1, 1]) m.ring([x, yw, s * .58], 'z', .16, .14, .05, C.dark, 8); // the windlass
+      for (const q of [-.5, .5]) { const a = q > 0 ? 2.1 : .5; m.timber([x - .85 * sin(a), yw - .85 * cos(a), q], [x + .85 * sin(a), yw + .85 * cos(a), q], .06, .06); } } // handspikes in their holes
+    for (const s of [-1, 1]) each(3, i => { const dz = (i - 1) * .05; m.rope([[-xw, yw + .13, s * .36 + dz * 3], [-.4, yb + .32 + dz, s * .36 + dz], [.4, yb + .32 + dz, s * .36 + dz], [xw, yw + .13, s * .36 + dz * 3]], .018, C.thatch); }); // the strings
+    m.figure(1.8, g, 1.35, 1.7, C.shade); return; }
+  const th = 15 * PI / 180, y0 = g + 13.5 * F + .4 * F + 1.1 * F * cos(th), E = tilt(m, [0, y0, 0], th, F), { L, B, T, R, D } = E;
+  // X.10.4 the standard: a base of eight holes on the ground, twelve high, three struts of nine; the tenon and the head, a hole and a half
+  m.timber([-4 * F, g + .33 * F, 0], [4 * F, g + .33 * F, 0], .75 * F, .667 * F); m.timber([0, g + .3 * F, -4 * F], [0, g + .3 * F, 4 * F], .75 * F, .6 * F);
+  m.timber([0, g, 0], [0, g + 12 * F, 0], .75 * F, .667 * F); m.lathe(0, g + 12 * F, 0, [[.36 * F, 1.5 * F], [.5 * F, 1.35 * F], [.5 * F, .25 * F], [.4 * F, 0]], W, 8);
+  for (const [x, z] of [[-1, 0], [1, 0], [0, 1]]) m.timber([x * 3.6 * F, g + .6 * F, z * 3.6 * F], [x * .3 * F, g + 8.2 * F, z * .3 * F], .5 * F, .417 * F);
+  B(0, -1.3, 0, 2, .4, 1.7); // the cradle the stock turns on
+  // X.10.5 the antibasis behind, its prop, and the cushion over it
+  const cb = L(-8, -2.6), cz = cb[2]; B(-8, -1.85, 0, .75, 1.5, 2.5); m.timber([0, g, cz], [0, cb[1] + .05, cz], .75 * F, .667 * F); m.timber([0, g + .3 * F, cz - 1.6 * F], [0, g + .3 * F, cz + 1.6 * F], .75 * F, .6 * F);
+  m.timber([0, g + (cb[1] - g) * .5, cz], [0, g + .55 * F, -3.7 * F], .75 * F, .667 * F);
+  // X.10.3 the pipe: its two cheeks of nineteen holes, the trough (slider) sliding between them, drawn back; the claw and the trigger at its heel
+  for (const s of [-1, 1]) B(-1.5, -.6, s * .475, 19, 1, .45); for (const u of [-10.4, -3, 6.5]) B(u, -1.25, 0, .5, .3, 1.6);
+  B(.5, -.375, 0, 14, .75, .5); m.oq(L(-6.4, .005, -.06), L(5.6, .005, -.06), L(5.6, .005, .06), L(-6.4, .005, .06), C.dark, E.n); // the trough with its groove
+  B(-6.1, .25, 0, .55, .5, .5, C.dark); T([-6.2, -.2, 0], [-7.6, -2.3, 0], .4, .3); // claw and trigger
+  // X.10.3 the windlass at the heel between its two strips, the handspikes, the rope that hauled the slider back
+  for (const s of [-1, 1]) B(-10, -1.15, s * .95, 3, .5, .5); R([-10, -1.15, -1.75], [-10, -1.15, 1.75], .375); for (const s of [-1, 1]) { T([-10, -2.6, s * 1.5], [-10, .3, s * 1.5], .15); T([-11.4, -1.15, s * 1.5], [-8.6, -1.15, s * 1.5], .15); }
+  m.rope([L(-10, -.8), L(-6.4, .15)], .02);
+  // X.10.2-3 the capital: boards above and below, sideposts four holes high, the middle post with the opening for the arrow, iron plates at the corners
+  const uc = 3.4, uw = 1.75; for (const v of [-1.6, 3.4]) B(uc, v, 0, uw, 1, 5.2); for (const s of [-1, 1]) { B(uc, .9, s * 2.27, 1.5, 4, .417); for (const v of [-1.6, 3.4]) B(uc + .9, v, s * 2.45, .05, .7, .3, C.dark); }
+  B(uc, 1.6, 0, 1, 2.6, 1.125);
+  // the twisted sinews through the holes, the bronze boxes (modioli) on both boards and their bolts
+  for (const s of [-1, 1]) { const w = s * 1.3125; R([uc, -2.5, w], [uc, 4.3, w], .45, C.thatch, 8); for (const [v, sg] of [[-2.275, -1], [4.075, 1]]) { D(uc, v, w, .75, .35); B(uc, v + sg * .26, w, .22, .18, 1.5, C.dark); }
+    // X.10.5 the arm, seven holes, two thirds thick at the root and half at the end, drawn back; the string to the claw
+    const a = 55 * PI / 180, tip = [uc - 7 * sin(a), .9, s * (1.3125 + 7 * cos(a))], mid = [uc - 3.5 * sin(a) + .35 * cos(a), .9, s * (1.3125 + 3.5 * cos(a) + .35 * sin(a))];
+    T([uc, .9, w], mid, .667, .667); T(mid, tip, .58, .5); m.rope([L(...tip), L(-6.1, .4)], .018); }
+  R([-6, .15, 0], [3.1, .15, 0], .07, [.8, .7, .52], 5); R([3.1, .15, 0], [4.9, .15, 0], .13, C.dark, 4); for (const q of [-1, 1]) B(-5.4, .15 + q * .15, 0, 1, .3, .02, C.marble); // the arrow, its iron head and feathers
 }
-function ballista(m) { const F = .32; slab(m, 11, 12, C.earth, .12); m.box(0, .12, 0, 9 * F, .3, 14 * F, W); for (const s of [-1, 1]) { m.beam([s * 3 * F, .3, 4 * F], [s * 2.2 * F, 9 * F, 5 * F], F); m.beam([s * 3 * F, .3, -5 * F], [s * 2.2 * F, 9 * F, 3 * F], F * .7); }
-  const a = [0, 10 * F, 6 * F], d = [0, -.42, -.907]; for (const s of [-1, 1]) { m.at(s * 3.4 * F, 8.4 * F, 5.4 * F, 0, () => { m.box(0, 0, 0, 1.75 * F, 2 * F * 2.6, 2 * F, W); m.cyl(0, -.4 * F, 0, F / 2, F / 2, 6 * F, C.thatch, 8); m.beam([0, 2.6 * F, 0], [s * 6 * F, 2.6 * F, -2.4 * F], F * .6); }); m.rod([s * 9.4 * F, 11 * F, 3 * F], add3(a, d, 11 * F), .025, C.dark, 4); m.beam(add3([s * .62 * F, 0, 0], a, 1), add3(add3([s * .62 * F, 0, 0], a, 1), d, 13 * F), F * .5); }
-  each(9, i => m.box(...add3(a, d, (i + .5) * 1.4 * F), 1.3 * F, F * .25, F * .25, W)); const e = add3(a, d, 11 * F); m.ball(e[0], e[1] + .1, e[2], F * .8, S, 8); const b = add3(a, d, 14 * F); m.ring([0, b[1] - F, b[2] - F], 'x', F * .8, 0, 5 * F, W, 8); for (const s of [-1, 1]) m.box(s * 2 * F, .12, b[2] - F, F * .6, b[1], F * .6, W); }
+// X.11 the ballista for stones, sized by the hole (here F): two half-frames on rhomboid plates (scutulae) with their bronze boxes and curved sideposts,
+// joined by the table; the ladder of two shafts thirteen holes long with the chelonium sliding in it; the base, its supporter, the stays
+function ballista(m) { const F = .32, g = .12; slab(m, 11, 12, C.earth, g);
+  const th = 30 * PI / 180, E = tilt(m, [0, g + 3 * F, -2.2], th, F), { L, B, T, R, D, P } = E;
+  // X.11.7 the ladder: shafts thirteen long, one thick, a hole and a quarter apart; crosspieces beneath
+  for (const s of [-1, 1]) B(6.5, -.5, s * 1.125, 13, 1, 1); for (const u of [.6, 4.5, 8.4]) B(u, -1.15, 0, .6, .3, 3.25);
+  // X.11.7-8 the chelonium, drawn back, with its claw; the windlass at the heel and its rope
+  B(6.2, -.15, 0, 11.5, .25, 1.167); B(.75, .3, 0, .7, .65, .9, C.dark); m.ball(...L(1.3, .3), .5 * F, S, 8);
+  R([1.4, -2, -1.9], [1.4, -2, 1.9], .5); for (const s of [-1, 1]) { B(1.4, -1.55, s * 1.85, 1, 1.8, .45); T([1.4, -4.4, s * 1.75], [1.4, .4, s * 1.75], .2); } m.rope([L(1.4, -1.5), L(.6, .2)], .025);
+  // the base on the ground under the heel, the supporter jointed on halfway, the stays
+  const hb = L(1.4, -2.45); for (const s of [-1, 1]) m.timber([s * 1.85 * F, g, hb[2]], [s * 1.85 * F, hb[1] + .03, hb[2]], .45 * F, F); m.timber([-2.6 * F, g + F / 2, hb[2]], [2.6 * F, g + F / 2, hb[2]], F, F);
+  const uf = 10.6, wf = 2.85, sp = L(8.4, -1.3); m.timber([0, g, sp[2]], [0, sp[1] + .03, sp[2]], 1.5 * F, 1.5 * F); m.timber([-1.6, g + F / 2, sp[2]], [1.6, g + F / 2, sp[2]], F, F);
+  for (const s of [-1, 1]) { const b = L(uf, -3.6, s * wf); m.timber([b[0], g, b[2]], [b[0], b[1] + .05, b[2]], F, F); const t = L(uf + 1.25, 2.6, s * (wf + .4)); m.timber([b[0] + s * .9, g, b[2] + 1.5], t, .25 * F, .2 * F); }
+  m.timber([-wf * F, g + F / 2, L(uf, -3.6)[2]], [wf * F, g + F / 2, L(uf, -3.6)[2]], F, F);
+  // X.11.6 the table: strips from frame to frame below and above the ladder
+  for (const du of [-1.3, 1.3]) { B(uf + du, -1.25, 0, .5, .5, 2 * wf - 1); B(uf + du, 2.4, 0, .5, .5, 2 * wf - 1); }
+  for (const s of [-1, 1]) { const w = s * wf, sc = [[uf - 1.5, w], [uf - .9, w + 1.08], [uf + .9, w + 1.08], [uf + 1.5, w], [uf + .9, w - 1.08], [uf - .9, w - 1.08]];
+    P(sc, -3.43, -2.85); P(sc, 2.85, 3.43); // X.11.4-5 the scutulae, rhomboid, seven twelfths thick
+    for (const du of [-1.25, 1.25]) { const q = uf + du; T([q, -2.85, w], [q + Math.sign(du) * .5, 0, w], .77, .77); T([q + Math.sign(du) * .5, 0, w], [q, 2.85, w], .77, .77); } // X.11.5 the sideposts, curved half a hole
+    R([uf, -4, w], [uf, 4, w], .5, C.thatch, 8); for (const [v, sg] of [[-3.68, -1], [3.68, 1]]) { D(uf, v, w, .875, .5); B(uf, v + sg * .32, w, .25, .2, 1.8, C.dark); } // springs, boxes, bolts
+    // X.11.9 the arm, six holes, drawn back; the string to the claw
+    const a = 58 * PI / 180, tip = [uf - 6 * sin(a), .3, w + s * 6 * cos(a)], mid = [uf - 3 * sin(a) + .25 * cos(a), .3, w + s * (3 * cos(a) + .25 * sin(a))];
+    T([uf, .3, w], mid, .667, .667); T(mid, tip, .58, .5); m.rope([L(...tip), L(.9, .5)], .022); }
+}
+
 function tower(m, w, h, st, x = 0, z = 0) { const r = w / Math.SQRT2; m.at(x, 0, z, PI / 4, () => { m.cyl(0, .9, 0, r, r * .8, h, C.thatch, 4); each(st, i => { const t = (i + 1) / st, q = r * (1 - .2 * t); m.cyl(0, .9 + h * t - .12, 0, q + .25, q + .25, .16, W, 4); }); }); each(st, i => { const t = (i + .5) / st, q = w * (1 - .2 * t) / 2; m.box(x, .9 + h * t - .4, z + q + .03, w * .16, Math.min(.9, h / st * .4), .06, C.dark); }); for (const s of [-1, 1]) for (const zz of [-1, 1]) wheelX(m, x + s * (w / 2 - .4), .9, z + zz * w * .3, .9, .4, W, 6); m.box(x, .7, z, w + .3, .4, w + .3, W); m.box(x, .9 + h, z, w * .82, .8, w * .82, W); }
 function siege(m, p) { const k = p.kind || 'tower'; if (k === 'large') { slab(m, 18, 18, C.earth, .12); tower(m, 23.5 * CU, 120 * CU, 20); } else if (k === 'helepolis') { slab(m, 26, 26, C.earth, .12); tower(m, 60 * FT, 135 * FT, 9); each(3, i => m.ball(-9 + i * 1.6, .12, 11, .5, S, 8)); } else { slab(m, 14, 14, C.earth, .12); tower(m, 17 * CU, 60 * CU, 10); } }
 function tortoise(m, p) { const k = p.kind || 'plain';

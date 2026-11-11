@@ -10,7 +10,7 @@ import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { build, GEN } from './forms.js';
-import { M, C, FT } from './mesh.js';
+import { M, C, FT, setDetail } from './mesh.js';
 import { RULES, FORMS } from './rules.js';
 import {
   SEA_Y, WINDS_24, campagnaGround, buildContours, buildCompassRose,
@@ -21,6 +21,7 @@ const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAl
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const BASE = document.querySelector('meta[name="atlas-base"]')?.content || '..';
 
+const passagesReq = fetch(`${BASE}/data/passages.json`).then(r => r.json()); // starts with the rest, read after the city is built
 const [city, map, toc, scholar] = await Promise.all(
   ['city', 'map', 'toc', 'scholar'].map(f => fetch(`${BASE}/data/${f}.json`).then(r => r.json()))
 );
@@ -58,13 +59,31 @@ for (const [kind, list] of Object.entries(scholar.entities)) {
 const MATS = Object.keys(city.matrices);
 let by = 'theme', lang = 'en', camMode = '3d', activeTour = null;
 let sel = null, hi = null, hover = null, dirty = true, fly = null, move = null;
-const walkState = { yaw: 0, pitch: 0.06, keys: new Set(), velY: 0, hopY: 0, dragging: false, lastX: 0, lastY: 0 };
+const walkState = { joyF: 0, joyS: 0, yaw: 0, pitch: 0.06, keys: new Set(), velY: 0, hopY: 0, dragging: false, lastX: 0, lastY: 0 };
 
 // ---------------------------------------------------------------- renderer, cameras & lighting
+// Quality by device: a desk gets everything live; a phone or tablet draws at a lower pixel ratio with plainer rounds,
+// a smaller shadow map and ambient occlusion only once the view has come to rest; ?q=high|mid|low overrides.
+const QS = new URLSearchParams(location.search);
+const TOUCH = matchMedia('(pointer: coarse)').matches || (navigator.maxTouchPoints > 1 && matchMedia('(hover: none)').matches);
+const TIER = ['high', 'mid', 'low'].includes(QS.get('q')) ? QS.get('q') : QS.has('lite') ? 'low'
+  : TOUCH || innerWidth < 700 || (navigator.deviceMemory || 8) < 4 ? 'mid' : 'high';
+const Q = {
+  high: { pr: 1.75, prMin: 1, shadow: 4096, msaa: 4, ao: 'live', detail: 1 },
+  mid: { pr: 1.5, prMin: 0.9, shadow: 2048, msaa: 4, ao: 'settle', detail: 0.7 },
+  low: { pr: 1.1, prMin: 0.75, shadow: 1024, msaa: 0, ao: 'off', detail: 0.7 },
+}[TIER];
+setDetail(Q.detail);
+document.body.classList.toggle('touch', TOUCH);
+const narrow = () => innerWidth <= 960;
+const tick = () => new Promise(r => { const c = new MessageChannel(); c.port1.onmessage = r; c.port2.postMessage(0); });
+let PR = Math.min(devicePixelRatio, Q.pr), shadowKey = '', settled = false, lastDrawn = 0, slowAcc = 0, slowN = 0, slowRuns = 0, readyAt = 1e15;
+
 const canvas = $('#c');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+renderer.setPixelRatio(PR);
 renderer.shadowMap.enabled = true;
+renderer.shadowMap.autoUpdate = false; // drawn again only when the sun, the buildings or the covered ground change
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.84;
@@ -85,20 +104,21 @@ controls.maxPolarAngle = 1.47; controls.minDistance = 16; controls.zoomToCursor 
 const hemi = new THREE.HemisphereLight(0xbcd3f0, 0xd8c6a4, 0.9);
 scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff3df, 4.2);
-sun.castShadow = true; sun.shadow.mapSize.set(4096, 4096);
+sun.castShadow = true; sun.shadow.mapSize.set(Q.shadow, Q.shadow);
 sun.shadow.bias = -0.0003; sun.shadow.normalBias = 0.3; sun.shadow.radius = 2.2;
 
 // Post chain: beauty (4x MSAA, half-float) -> ground-truth ambient occlusion -> tone map -> grade
-const LITE = new URLSearchParams(location.search).has('lite');
-const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 }));
+const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: Q.msaa }));
 const renderPass = new RenderPass(scene, perspCam);
-const gtao = new GTAOPass(scene, perspCam, 4, 4);
-gtao.updateGtaoMaterial({ radius: 3.2, distanceExponent: 1.4, thickness: 1.6, distanceFallOff: 1, scale: 1.15, samples: 12, screenSpaceRadius: false });
-gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 12 });
-gtao.blendIntensity = 0.95;
-gtao.enabled = !LITE;
+const gtao = Q.ao === 'off' ? null : new GTAOPass(scene, perspCam, 4, 4);
+if (gtao) {
+  gtao.updateGtaoMaterial({ radius: 3.2, distanceExponent: 1.4, thickness: 1.6, distanceFallOff: 1, scale: 1.15, samples: Q.ao === 'live' ? 12 : 8, screenSpaceRadius: false });
+  gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: Q.ao === 'live' ? 12 : 8 });
+  gtao.blendIntensity = 0.95;
+  gtao.enabled = Q.ao === 'live';
+}
 const gradePass = new ShaderPass(GradeShader);
-composer.addPass(renderPass); composer.addPass(gtao); composer.addPass(new OutputPass()); composer.addPass(gradePass);
+composer.addPass(renderPass); if (gtao) composer.addPass(gtao); composer.addPass(new OutputPass()); composer.addPass(gradePass);
 scene.add(sun, sun.target);
 
 const TH = city.theta, cT = Math.cos(TH), sT = Math.sin(TH);
@@ -112,8 +132,10 @@ const ground = (x, z, r = RAD) => campagnaGround(x, z, r, cityGround);
 const geomOf = b => {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(b.pos || new Float32Array(b.P), 3));
-  g.setAttribute('normal', new THREE.BufferAttribute(b.nor || new Float32Array(b.N), 3));
-  g.setAttribute('color', new THREE.BufferAttribute(b.col || new Float32Array(b.K), 3));
+  const nor = b.nor || b.N, col = b.col || b.K, n8 = new Int8Array(nor.length), c8 = new Uint8Array(col.length);
+  for (let i = 0; i < nor.length; i++) { n8[i] = Math.round(nor[i] * 127); c8[i] = Math.round(Math.min(1, Math.max(0, col[i])) * 255); }
+  g.setAttribute('normal', new THREE.BufferAttribute(n8, 3, true));
+  g.setAttribute('color', new THREE.BufferAttribute(c8, 3, true));
   g.computeBoundingSphere();
   return g;
 };
@@ -210,10 +232,13 @@ function fitShadow() {
   const walk = camMode === 'walk';
   const c = walk ? perspCam.position : controls.target;
   const dist = walk ? 0 : camMode === 'plan' ? 900 / orthoCam.zoom : perspCam.position.distanceTo(controls.target);
-  const ext = Math.min(RAD + 190, Math.max(walk ? 150 : 170, dist * 0.62));
+  // the covered ground grows in steps and its centre moves in steps, so the map is redrawn only now and then
+  const ext = Math.min(RAD + 190, walk ? 170 : 170 * 1.12 ** Math.ceil(Math.log(Math.max(1, dist * 0.62 / 170)) / Math.log(1.12)));
   const sc = sun.shadow.camera, far = RAD * 3.2 + 600;
   // snap the centre to shadow texels so the map does not swim while panning
-  const tex = (2 * ext) / 4096 * 8, cx = Math.round(c.x / tex) * tex, cz = Math.round(c.z / tex) * tex;
+  const tex = (2 * ext) / 4096 * (walk ? 96 : 32), cx = Math.round(c.x / tex) * tex, cz = Math.round(c.z / tex) * tex;
+  const key = cx + ',' + cz + ',' + ext;
+  if (key !== shadowKey) { shadowKey = key; renderer.shadowMap.needsUpdate = true; }
   sun.target.position.set(cx, 0, cz);
   sun.position.set(cx, 0, cz).addScaledVector(sunDir, far * 0.5);
   if (sc.right !== ext) { sc.left = sc.bottom = -ext; sc.right = sc.top = ext; sc.near = 10; sc.far = far; sc.updateProjectionMatrix(); }
@@ -222,7 +247,7 @@ function fitShadow() {
 function updateSun() {
   const s = computeRomanSun(sunHour, sunSeason);
   sun.color.copy(s.sunColor);
-  sunDir.copy(s.dir);
+  sunDir.copy(s.dir); shadowKey = '';
   hemi.color.copy(s.hemiTop);
   hemi.groundColor.copy(s.hemiGround);
   scene.background.copy(s.horizon);
@@ -302,7 +327,13 @@ const place = (e, m = by) => {
   };
 };
 
-for (const e of E) {
+let builtAt = performance.now();
+for (let i = 0; i < E.length; i++) {
+  const e = E[i];
+  if (performance.now() - builtAt > 40) { // let the page breathe and show how far the building has come
+    $('#enterBtn').textContent = `Building the city… ${Math.round(100 * i / E.length)}%`;
+    await tick(); builtAt = performance.now();
+  }
   const g = geomOf(build(e.form, e.params, e.scale)), mesh = new THREE.Mesh(g, mat);
   mesh.castShadow = mesh.receiveShadow = true; mesh.userData = e; e.mesh = mesh;
   e.boundR = Math.hypot(e.w * 0.5, e.d * 0.5, e.h) + 2;
@@ -312,7 +343,7 @@ for (const e of E) {
 
 const edgeQueue = E.slice();
 function edgeStep() {
-  for (let k = 0; k < 70 && edgeQueue.length; k++) {
+  for (const t0 = performance.now(); edgeQueue.length && performance.now() - t0 < 7;) {
     const e = edgeQueue.shift();
     e.edges = new THREE.LineSegments(new THREE.EdgesGeometry(e.mesh.geometry, 38), e === sel ? inkSel : e.mesh.material === matDim ? inkDim : ink);
     e.mesh.add(e.edges);
@@ -456,14 +487,16 @@ function updateKeysHint() {
   const k = $('#keys'), sb = $('#scaleBar');
   if (camMode === 'walk') {
     sb.hidden = true;
-    k.innerHTML = '<span><b>W A S D</b> walk</span><span><b>drag</b> look</span><span><b>Shift</b> run</span><span><b>click</b> read a building</span><span><b>Esc</b> back to the air</span>';
+    k.innerHTML = TOUCH ? '<span><b>stick</b> walk</span><span><b>drag</b> look</span><span><b>tap</b> read a building</span>'
+      : '<span><b>W A S D</b> walk</span><span><b>drag</b> look</span><span><b>Shift</b> run</span><span><b>click</b> read a building</span><span><b>Esc</b> back to the air</span>';
   } else if (camMode === 'plan') {
     sb.hidden = false;
-    k.innerHTML = '<span><b>drag</b> pan</span><span><b>wheel</b> zoom</span><span><b>click</b> read a building</span>';
+    k.innerHTML = TOUCH ? '<span><b>drag</b> pan</span><span><b>pinch</b> zoom</span><span><b>tap</b> read a building</span>' : '<span><b>drag</b> pan</span><span><b>wheel</b> zoom</span><span><b>click</b> read a building</span>';
     updateScaleBar();
   } else {
     sb.hidden = true;
-    k.innerHTML = '<span><b>drag</b> move</span><span><b>right-drag</b> turn</span><span><b>wheel</b> zoom</span><span><b>click</b> read a building</span><span><b>F</b> walk</span>';
+    k.innerHTML = TOUCH ? '<span><b>drag</b> move</span><span><b>two fingers</b> turn and zoom</span><span><b>tap</b> read a building</span>'
+      : '<span><b>drag</b> move</span><span><b>right-drag</b> turn</span><span><b>wheel</b> zoom</span><span><b>click</b> read a building</span><span><b>F</b> walk</span>';
   }
 }
 
@@ -488,6 +521,8 @@ function setCamMode(mode, targetEl = sel) {
   const prev = camMode;
   camMode = mode;
   document.body.classList.toggle('mode-walk', mode === 'walk');
+  if (mode === 'walk' && narrow()) setSheet('peek'); // the street needs the whole screen
+  shadowKey = '';
   canvas.classList.toggle('walk', mode === 'walk');
   $$('#camModes button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.cam === mode)));
 
@@ -510,14 +545,14 @@ function setCamMode(mode, targetEl = sel) {
   } else if (mode === 'walk') {
     activeCam = perspCam;
     perspCam.up.set(0, 1, 0);
-    perspCam.fov = 52;
+    perspCam.fov = canvas.clientWidth < canvas.clientHeight ? 70 : 52; perspCam.near = 0.28; // an upright phone needs a wider lens
     perspCam.updateProjectionMatrix();
     controls.enabled = false;
     // Choose street arrival point in front of targetEl, or Forum marble amussium
     let tx = 0, tz = 28, lookX = 0, lookY = 6, lookZ = -18;
     if (targetEl) {
       const m = targetEl.mesh, rot = m.rotation.y;
-      const dFront = Math.max(targetEl.w, targetEl.d) * 0.62 + Math.max(13, targetEl.h * 1.0);
+      const dFront = (Math.max(targetEl.w, targetEl.d) * 0.62 + Math.max(13, targetEl.h * 1.0)) * (canvas.clientWidth < canvas.clientHeight ? 1.45 : 1);
       // Pick the clearest street/plaza vantage angle in front of or diagonally framing the facade
       let bestScore = -1e9;
       for (const da of [0.32, -0.32, 0, 0.68, -0.68, 1.1, -1.1, 1.6, -1.6, 2.2, -2.2, Math.PI + 0.3, Math.PI - 0.3]) {
@@ -560,7 +595,7 @@ function setCamMode(mode, targetEl = sel) {
     // 3d Scaenographia
     activeCam = perspCam;
     perspCam.up.set(0, 1, 0);
-    perspCam.fov = 32;
+    perspCam.fov = 32; perspCam.near = 1.2;
     perspCam.updateProjectionMatrix();
     controls.object = perspCam;
     controls.enabled = true;
@@ -588,6 +623,37 @@ function walkGround(x, z) {
   }
   return y;
 }
+// Walls stop the walker and steps carry him: two chest-high rays ahead, one ray down for the floor underfoot
+const wRay = new THREE.Raycaster(), wO = new THREE.Vector3(), wD = new THREE.Vector3(), wN = new THREE.Vector3();
+const STEP_UP = 0.62, BODY = 0.42;
+function walkSolids(x, z, reach) {
+  const out = [];
+  for (let i = 0; i < meshes.length; i++) {
+    const m = meshes[i];
+    if (m.visible && Math.hypot(m.position.x - x, m.position.z - z) < m.userData.boundR + reach) out.push(m);
+  }
+  if (frame) out.push(frame);
+  if (extLandmarksMesh) out.push(extLandmarksMesh);
+  return out;
+}
+function walkBlocked(solids, x, feet, z, dx, dz, len) {
+  let best = null;
+  for (const h of [0.85, 1.55]) {
+    wO.set(x, feet + h, z); wD.set(dx, 0, dz);
+    wRay.set(wO, wD); wRay.near = 0; wRay.far = len + BODY;
+    const hit = wRay.intersectObjects(solids, false)[0];
+    if (hit && hit.face && (!best || hit.distance < best.distance)) best = hit;
+  }
+  return best;
+}
+function walkFloor(solids, x, feet, z) {
+  let y = walkGround(x, z);
+  wO.set(x, feet + STEP_UP, z); wD.set(0, -1, 0);
+  wRay.set(wO, wD); wRay.near = 0; wRay.far = STEP_UP + 40;
+  const hit = wRay.intersectObjects(solids, false)[0];
+  if (hit && hit.point.y > y) y = hit.point.y;
+  return y;
+}
 function syncWalkLook() {
   const cp = Math.cos(walkState.pitch), sp = Math.sin(walkState.pitch);
   const dx = Math.sin(walkState.yaw) * cp, dz = Math.cos(walkState.yaw) * cp;
@@ -601,7 +667,7 @@ function paint() {
     const edgeM = e === sel && camMode !== 'walk' ? inkSel : m === matDim ? inkDim : ink;
     if (e.mesh.material !== m) {
       e.mesh.material = m;
-      e.mesh.castShadow = m !== matDim;
+      e.mesh.castShadow = m !== matDim; shadowKey = '';
     }
     if (e.edges && e.edges.material !== edgeM) e.edges.material = edgeM;
   }
@@ -1191,6 +1257,31 @@ $('#togglePanel').onclick = () => {
   const shut = document.body.classList.toggle('panel-shut');
   $('#togglePanel').textContent = shut ? '‹' : '›';
 };
+// On a phone the panel is a sheet from below with three rests: a strip, half the screen, nearly all of it
+function setSheet(to) {
+  const b = document.body.classList;
+  b.toggle('panel-shut', to === 'peek'); b.toggle('sheet-full', to === 'full');
+  $('#togglePanel').textContent = to === 'peek' ? '‹' : '›';
+  dirty = true;
+}
+{
+  const grab = $('#grab'), panel = $('#panel'); let y0 = null, top0 = 0, moved = 0;
+  const state = () => (document.body.classList.contains('panel-shut') ? 'peek' : document.body.classList.contains('sheet-full') ? 'full' : 'half');
+  grab.addEventListener('pointerdown', ev => { y0 = ev.clientY; moved = 0; top0 = panel.getBoundingClientRect().top; grab.setPointerCapture(ev.pointerId); panel.style.transition = 'none'; });
+  grab.addEventListener('pointermove', ev => {
+    if (y0 === null) return;
+    moved = ev.clientY - y0;
+    panel.style.transform = `translateY(${Math.max(0, top0 + moved - (innerHeight - panel.offsetHeight))}px)`;
+  });
+  const end = () => {
+    if (y0 === null) return;
+    y0 = null; panel.style.transition = ''; panel.style.transform = '';
+    const s = state();
+    if (Math.abs(moved) < 8) setSheet(s === 'peek' ? 'half' : s === 'half' ? 'full' : 'half');
+    else { const top = (top0 + moved) / innerHeight; setSheet(top > 0.74 ? 'peek' : top < 0.36 ? 'full' : 'half'); }
+  };
+  grab.addEventListener('pointerup', end); grab.addEventListener('pointercancel', end);
+}
 
 // Solar Analemma controls & Soundscape
 $('#sunSeason').onchange = ev => { sunSeason = ev.target.value; updateSun(); };
@@ -1251,7 +1342,7 @@ addEventListener('blur', () => walkState.keys.clear());
 
 // ---------------------------------------------------------------- fast spatial ray-picking & pointer controls
 const ray = new THREE.Raycaster(), ptr = new THREE.Vector2(), tmpSphere = new THREE.Sphere();
-let down = null;
+let down = null, lookId = null;
 function pick(ev) {
   const r = canvas.getBoundingClientRect();
   ptr.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
@@ -1272,13 +1363,13 @@ function pick(ev) {
 canvas.addEventListener('pointerdown', ev => {
   down = [ev.clientX, ev.clientY];
   if (!fly?.walkArrive) fly = null;
-  if (camMode === 'walk') {
-    walkState.dragging = true;
+  if (camMode === 'walk' && !walkState.dragging) {
+    walkState.dragging = true; lookId = ev.pointerId;
     walkState.lastX = ev.clientX; walkState.lastY = ev.clientY;
   }
 });
 canvas.addEventListener('pointermove', ev => {
-  if (camMode === 'walk' && walkState.dragging && ev.buttons) {
+  if (camMode === 'walk' && walkState.dragging && ev.buttons && (lookId === null || ev.pointerId === lookId)) {
     const dx = ev.clientX - walkState.lastX, dy = ev.clientY - walkState.lastY;
     walkState.lastX = ev.clientX; walkState.lastY = ev.clientY;
     walkState.yaw -= dx * 0.0036;
@@ -1303,11 +1394,28 @@ canvas.addEventListener('pointerleave', () => {
   $('#tip').style.display = 'none';
   if (hover) { hover = null; paint(); }
 });
-addEventListener('pointerup', () => { walkState.dragging = false; });
+addEventListener('pointerup', ev => { if (lookId === null || ev.pointerId === lookId) { walkState.dragging = false; lookId = null; } });
+addEventListener('pointercancel', () => { walkState.dragging = false; lookId = null; });
+
+// The walking stick for fingers: push it the way you want to go, drag anywhere else to look around
+{
+  const st = $('#stick'), nub = st.firstElementChild; let id = null;
+  const set = ev => {
+    const r = st.getBoundingClientRect(), R = r.width / 2;
+    let x = (ev.clientX - r.left - R) / R, y = (ev.clientY - r.top - R) / R; const l = Math.hypot(x, y);
+    if (l > 1) { x /= l; y /= l; }
+    nub.style.transform = `translate(${x * R * 0.62}px, ${y * R * 0.62}px)`;
+    walkState.joyS = Math.abs(x) < 0.12 ? 0 : x * 1.5; walkState.joyF = Math.abs(y) < 0.12 ? 0 : -y * 1.5; dirty = true;
+  };
+  const end = ev => { if (ev.pointerId !== id) return; id = null; walkState.joyF = walkState.joyS = 0; nub.style.transform = ''; };
+  st.addEventListener('pointerdown', ev => { id = ev.pointerId; st.setPointerCapture(id); set(ev); ev.preventDefault(); });
+  st.addEventListener('pointermove', ev => { if (ev.pointerId === id) set(ev); });
+  st.addEventListener('pointerup', end); st.addEventListener('pointercancel', end);
+}
 canvas.addEventListener('pointerup', ev => {
-  if (!down || Math.hypot(ev.clientX - down[0], ev.clientY - down[1]) > 5) return;
+  if (!down || Math.hypot(ev.clientX - down[0], ev.clientY - down[1]) > (ev.pointerType === 'touch' ? 12 : 5)) return;
   const e = pick(ev);
-  if (e) go(`/e/${e.id}`);
+  if (e) { if (narrow()) setSheet('half'); go(`/e/${e.id}`); }
 });
 controls.addEventListener('change', () => { if (camMode === 'plan') updateScaleBar(); dirty = true; });
 
@@ -1378,7 +1486,7 @@ function frameLoop(now) {
       );
       it.e.mesh.rotation.y = it.a.rot + it.dr * k;
     }
-    repad();
+    repad(); shadowKey = '';
     if (done) move = null;
     if (sel) paint();
     dirty = true;
@@ -1402,24 +1510,40 @@ function frameLoop(now) {
   // First-person street walk physics (Ambulatio)
   if (camMode === 'walk' && !fly) {
     const ks = walkState.keys;
-    let f = (ks.has('w') || ks.has('arrowup') ? 1 : 0) - (ks.has('s') || ks.has('arrowdown') ? 1 : 0);
-    let s = (ks.has('d') ? 1 : 0) - (ks.has('a') ? 1 : 0);
+    let f = (ks.has('w') || ks.has('arrowup') ? 1 : 0) - (ks.has('s') || ks.has('arrowdown') ? 1 : 0) + walkState.joyF;
+    let s = (ks.has('d') ? 1 : 0) - (ks.has('a') ? 1 : 0) + walkState.joyS;
     const turn = (ks.has('arrowleft') ? 1 : 0) - (ks.has('arrowright') ? 1 : 0);
     if (turn) { walkState.yaw += turn * 1.65 * dt; dirty = true; }
-    const settle = Math.abs(perspCam.position.y - walkGround(perspCam.position.x, perspCam.position.z) - 1.7 - walkState.hopY) > 0.02;
+    const feet0 = perspCam.position.y - 1.7 - walkState.hopY;
+    let solids = walkSolids(perspCam.position.x, perspCam.position.z, 3);
+    const settle = Math.abs(feet0 - walkFloor(solids, perspCam.position.x, feet0, perspCam.position.z)) > 0.02;
     if (f || s || settle || walkState.hopY > 0 || Math.abs(walkState.velY) > 0.01) {
-      const len = Math.hypot(f, s) || 1; f /= len; s /= len;
+      const len = Math.max(1, Math.hypot(f, s) / (walkState.joyF || walkState.joyS ? 1.5 : 1)); f /= len; s /= len;
       const spd = (ks.has('shift') ? 34 : 15) * dt;
       const sy = Math.sin(walkState.yaw), cy = Math.cos(walkState.yaw);
-      const nx = perspCam.position.x + (sy * f - cy * s) * spd;
-      const nz = perspCam.position.z + (cy * f + sy * s) * spd;
+      let mx = (sy * f - cy * s) * spd, mz = (cy * f + sy * s) * spd, ml = Math.hypot(mx, mz);
+      if (ml > 1e-6) {
+        const px = perspCam.position.x, pz = perspCam.position.z;
+        let hit = walkBlocked(solids, px, feet0, pz, mx / ml, mz / ml, ml);
+        if (hit) { // slide along the wall that was met; stop if the slide is blocked too
+          wN.copy(hit.face.normal).transformDirection(hit.object.matrixWorld); wN.y = 0;
+          const nl = wN.length();
+          if (nl > 0.2) {
+            wN.multiplyScalar(1 / nl);
+            const into = mx * wN.x + mz * wN.z;
+            mx -= into * wN.x; mz -= into * wN.z; ml = Math.hypot(mx, mz);
+            if (ml < 1e-5 || walkBlocked(solids, px, feet0, pz, mx / ml, mz / ml, ml)) mx = mz = 0;
+          } else mx = mz = 0;
+        }
+      }
+      const nx = perspCam.position.x + mx, nz = perspCam.position.z + mz;
       const lim = RAD + 160;
       const d = Math.hypot(nx, nz);
       perspCam.position.x = d > lim ? (nx / d) * lim : nx;
       perspCam.position.z = d > lim ? (nz / d) * lim : nz;
       walkState.hopY = Math.max(0, walkState.hopY + walkState.velY * dt);
       walkState.velY = walkState.hopY > 0 ? walkState.velY - 15 * dt : 0;
-      const baseG = walkGround(perspCam.position.x, perspCam.position.z) + 1.7 + walkState.hopY;
+      const baseG = walkFloor(solids, perspCam.position.x, feet0, perspCam.position.z) + 1.7 + walkState.hopY;
       perspCam.position.y += (baseG - perspCam.position.y) * Math.min(1, dt * 12);
       syncWalkLook();
       dirty = true;
@@ -1429,8 +1553,16 @@ function frameLoop(now) {
   if (camMode !== 'walk' && controls.update()) dirty = true;
   if (introOn) dirty = true;
 
+  if (!dirty && gtao && Q.ao === 'settle' && !settled && camMode !== 'plan' && now - lastDrawn > 240) { settled = dirty = true; }
+  else if (dirty) settled = false;
   if (dirty) {
     dirty = false;
+    if (!settled) {
+      // a phone that cannot keep 30 frames a second draws fewer pixels rather than fewer frames
+      if (now - lastDrawn < 120 && now > readyAt + 2500 && !move && !edgeQueue.length) { slowAcc += now - lastDrawn; slowN++; } else slowAcc = slowN = slowRuns = 0;
+      if (slowN >= 24) { slowRuns = slowAcc / slowN > 34 ? slowRuns + 1 : 0; if (slowRuns >= 2 && PR > Q.prMin) { PR = Math.max(Q.prMin, PR - 0.2); renderer.setPixelRatio(PR); resize(); slowRuns = 0; } slowAcc = slowN = 0; }
+      lastDrawn = now;
+    }
     waterMesh.userData.uTime.value = now * 0.001;
     const d = camMode === 'walk' ? 60 : camMode === 'plan' ? 420 / orthoCam.zoom : activeCam.position.distanceTo(controls.target);
     ink.opacity = Math.min(0.76, Math.max(0.16, 1.02 - d / 650));
@@ -1439,9 +1571,12 @@ function frameLoop(now) {
     fitShadow();
     scene.fog.density = camMode === 'walk' ? 0.0007 : camMode === 'plan' ? 0 : 0.00009 + 0.00016 * Math.min(1, Math.max(0, (perspCam.position.y - controls.target.y) / d < 0.5 ? 1 - (perspCam.position.y - controls.target.y) / d / 0.5 : 0));
     sky.position.copy(activeCam.position);
-    renderPass.camera = gtao.camera = activeCam;
-    gtao.enabled = !LITE && camMode !== 'plan';
-    gtao.updateGtaoMaterial({ radius: Math.min(9, Math.max(1.4, d * 0.011)) });
+    renderPass.camera = activeCam;
+    if (gtao) {
+      gtao.camera = activeCam;
+      gtao.enabled = camMode !== 'plan' && (Q.ao === 'live' || settled);
+      if (gtao.enabled) gtao.updateGtaoMaterial({ radius: Math.min(9, Math.max(1.4, d * 0.011)) });
+    }
     gradePass.uniforms.uTime.value = now * 0.001;
     composer.render();
     drawLabs();
@@ -1464,14 +1599,17 @@ if (document.body.classList.contains('intro')) startIntro();
   const c0 = new URLSearchParams(location.hash.split('?')[1] || '').get('cam');
   if (c0 === 'walk' || c0 === 'plan') setCamMode(c0, sel);
 }
-fetch(`${BASE}/data/passages.json`).then(r => r.json()).then(arr => {
+passagesReq.then(arr => {
   PASSAGES = arr;
   TEXT = {}; P_META = {};
   for (const p of arr) { TEXT[p.id] = p.text; P_META[p.id] = p; }
   route(false);
-  if ('requestIdleCallback' in window) requestIdleCallback(() => ensureLatin());
-  else setTimeout(ensureLatin, 600);
+  // the Latin is fetched ahead only on a desk; a phone takes it when the reader asks for it
+  if (TIER === 'high' && !navigator.connection?.saveData) { if ('requestIdleCallback' in window) requestIdleCallback(() => ensureLatin()); else setTimeout(ensureLatin, 600); }
 });
+readyAt = performance.now();
+canvas.addEventListener('webglcontextlost', ev => ev.preventDefault());
+canvas.addEventListener('webglcontextrestored', () => { shadowKey = ''; dirty = true; });
 requestAnimationFrame(frameLoop);
 requestAnimationFrame(edgeStep);
 
@@ -1480,7 +1618,7 @@ const bench = (n = 40) => {
   for (let i = 0; i < n; i++) { const t = performance.now(); composer.render(); gl.finish(); ts.push(performance.now() - t); }
   ts.sort((x, y) => x - y);
   renderer.info.autoReset = false; renderer.info.reset(); composer.render();
-  const out = { median: ts[n >> 1], max: ts[n - 1], tris: renderer.info.render.triangles, calls: renderer.info.render.calls };
+  const out = { median: ts[n >> 1], max: ts[n - 1], tris: renderer.info.render.triangles, lines: renderer.info.render.lines, calls: renderer.info.render.calls, tier: TIER, pr: PR };
   renderer.info.autoReset = true; return out;
 };
-window.__city = { city, E, go, setBy, setCamMode, openIonicPlate, bench, updateSun: (h, s) => { sunHour = h; if (s) sunSeason = s; updateSun(); } };
+window.__city = { face: (x, z) => { walkState.yaw = Math.atan2(x - perspCam.position.x, z - perspCam.position.z); walkState.pitch = 0.05; syncWalkLook(); dirty = true; }, cam: () => [perspCam.position.x, perspCam.position.y, perspCam.position.z, walkState.yaw], key: (k, on) => { on ? walkState.keys.add(k) : walkState.keys.delete(k); dirty = true; }, city, E, go, setBy, setCamMode, openIonicPlate, bench, updateSun: (h, s) => { sunHour = h; if (s) sunSeason = s; updateSun(); } };

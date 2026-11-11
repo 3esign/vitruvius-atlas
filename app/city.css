@@ -310,25 +310,56 @@ ul.list li.cat { border: 0; padding: 16px 0 3px; font-size: 10px; letter-spacing
 #toast[hidden] { display: none; }
 .load, .nojs { color: var(--soft); font-style: italic; }
 
+/* touch: the walking stick and the sheet handle */
+#c { touch-action: none; -webkit-tap-highlight-color: transparent; }
+html, body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; }
+#stick { position: absolute; left: 22px; bottom: 84px; width: 112px; height: 112px; border-radius: 50%; display: none; z-index: 11; touch-action: none;
+  background: radial-gradient(circle, rgba(250, 248, 243, .34) 0, rgba(250, 248, 243, .2) 62%, rgba(250, 248, 243, .34) 100%); border: 1px solid rgba(28, 25, 21, .28); backdrop-filter: blur(6px); }
+#stick i { position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; margin: -23px; border-radius: 50%; background: rgba(28, 25, 21, .72); box-shadow: 0 0 0 2px rgba(250, 248, 243, .7); }
+body.touch.mode-walk:not(.intro) #stick { display: block; }
+#grab { display: none; }
 @media (max-width: 960px) {
-  :root { --panel: 0px; }
-  #stage { inset: 0 0 46vh 0; transition: none; }
-  body.panel-shut #stage, body.intro #stage { inset: 0; }
-  #panel { top: auto; left: 0; width: 100%; height: 46vh; box-shadow: 0 -1px 0 var(--line-strong), 0 -14px 40px rgba(28, 25, 21, .1); border-radius: 14px 14px 0 0; }
-  body.panel-shut #panel, body.intro #panel { transform: translateY(102%); }
-  #head { left: 16px; top: 12px; width: auto; right: 16px; }
+  :root { --panel: 0px; --half: 46vh; --peek: calc(64px + env(safe-area-inset-bottom, 0px)); }
+  @supports (height: 1dvh) { :root { --half: 46dvh; } }
+  #stage { inset: 0 0 var(--half) 0; transition: none; }
+  body.panel-shut #stage { inset: 0 0 var(--peek) 0; }
+  body.intro #stage { inset: 0; }
+  #panel { top: auto; left: 0; width: 100%; height: var(--half); box-shadow: 0 -1px 0 var(--line-strong), 0 -14px 40px rgba(28, 25, 21, .1); border-radius: 14px 14px 0 0; transition: transform .34s var(--ease); padding-bottom: env(safe-area-inset-bottom, 0px); }
+  body.sheet-full #panel { height: 90vh; height: 90dvh; }
+  body.panel-shut #panel { transform: translateY(calc(100% - var(--peek))); }
+  body.intro #panel { transform: translateY(102%); }
+  #grab { display: block; flex: none; width: 100%; height: 20px; margin-bottom: -8px; padding: 0; border: 0; background: none; touch-action: none; cursor: grab; }
+  #grab i { display: block; width: 40px; height: 4px; margin: 0 auto; border-radius: 2px; background: var(--line-strong); }
+  #togglePanel { display: none; }
+  #head { left: 16px; top: calc(12px + env(safe-area-inset-top, 0px)); width: auto; right: 16px; }
   h1 { font-size: 21px; margin: 2px 0 1px; }
   .kicker { font-size: 8.5px; } .sig-badge { font-size: 11.5px; }
-  .arrange { margin-top: 8px; gap: 10px; } #by { gap: 13px; } #by button { font-size: 13.5px; }
+  .arrange { margin-top: 8px; gap: 10px; } #by { gap: 4px; margin-left: -8px; } #by button { font-size: 13.5px; padding: 8px; }
   .arr-lbl, #bynote, #keys, #sunSeason, #sunReadout, #stat { display: none; }
   #dock { left: 10px; right: 10px; bottom: 10px; grid-template-columns: auto 1fr; }
-  .seg button { padding: 6px 9px; } #camModes button span { display: none; }
+  .seg button { padding: 9px 12px; } #camModes button span { display: none; }
   #sunHour { width: 76px; } #soundBtn { display: none; }
-  #togglePanel { top: auto; bottom: 62px; transform: rotate(90deg); right: 14px; }
-  #pbar { padding: 10px 16px 8px; } #qnav { padding: 0 16px 9px; gap: 2px 14px; } #page { padding: 16px 18px 40px; }
+  #sunPlay { min-width: 38px; min-height: 36px; }
+  #stick { bottom: 70px; left: 16px; }
+  .lab.l0 { font-size: 10.5px; letter-spacing: .17em; } .lab.l1 { font-size: 11px; }
+  #pbar { padding: 8px 16px 8px; } #qnav { padding: 0 16px 7px; gap: 0 4px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; white-space: nowrap; }
+  #qnav::-webkit-scrollbar { display: none; } #qnav a, #qnav .link-btn { padding: 6px 6px; }
+  #q { font-size: 16px; } /* below 16px iOS zooms the page on focus */
+  #page { padding: 16px 18px 40px; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+  #colophon { display: none; }
+  body.mode-walk #head .kicker, body.mode-walk #head .arrange { display: none; }
   .psg.on { margin: 0 -18px; padding-left: 15px; padding-right: 18px; }
   .bi-grid { grid-template-columns: 1fr; }
-  #intro { padding: 0 24px; background: linear-gradient(0deg, rgba(250, 248, 243, .95) 0, rgba(250, 248, 243, .82) 55%, rgba(250, 248, 243, .2) 100%); align-items: flex-end; padding-bottom: 34px; }
+  #intro { padding: 0 24px; background: linear-gradient(0deg, rgba(250, 248, 243, .95) 0, rgba(250, 248, 243, .82) 55%, rgba(250, 248, 243, .2) 100%); align-items: flex-end; padding-bottom: calc(34px + env(safe-area-inset-bottom, 0px)); }
   .intro-lead { font-size: 16px; }
+  .modal { padding: 0; } .modal-card { width: 100vw; height: 100vh; height: 100dvh; border-radius: 0; }
+}
+@media (max-width: 960px) and (orientation: landscape) and (max-height: 520px) {
+  :root { --half: 0px; }
+  #stage { inset: 0 44vw 0 0; } body.panel-shut #stage { inset: 0; }
+  #panel { left: auto; right: 0; top: 0; width: 44vw; height: 100%; border-radius: 0; }
+  body.sheet-full #panel { height: 100%; } body.panel-shut #panel { transform: translateX(102%); }
+  #grab { display: none; } #togglePanel { display: block; top: 50%; bottom: auto; right: 0; }
+  #head .kicker, #head .sig-badge { display: none; } h1 { font-size: 17px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition-duration: .01s !important; animation-duration: .01s !important; } }
