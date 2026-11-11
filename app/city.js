@@ -4,12 +4,17 @@
 // Design (what stands there): 55 parametric forms built from 132 verbatim rules of Vitruvius.
 import * as THREE from 'three';
 import { MapControls } from 'three/addons/controls/MapControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { build, GEN } from './forms.js';
 import { M, C, FT } from './mesh.js';
 import { RULES, FORMS } from './rules.js';
 import {
   SEA_Y, WINDS_24, campagnaGround, buildContours, buildCompassRose,
-  applyTravertineShader, createWaterMesh, computeRomanSun, VitruvianSound,
+  applyTravertineShader, applyGroundShader, createSky, GradeShader, buildGroves, createWaterMesh, computeRomanSun, VitruvianSound,
 } from './world.js';
 
 const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
@@ -60,12 +65,14 @@ const canvas = $('#c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFShadowMap;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.03;
+renderer.toneMappingExposure = 0.84;
 
-const PAPER = 0xefeae0, scene = new THREE.Scene();
+const PAPER = 0xe4e6e4, scene = new THREE.Scene();
 scene.background = new THREE.Color(PAPER);
+const sky = createSky();
+scene.add(sky);
 
 const perspCam = new THREE.PerspectiveCamera(32, 1, 1.2, 9500);
 const orthoCam = new THREE.OrthographicCamera(-500, 500, 500, -500, 5, 9000);
@@ -75,11 +82,23 @@ const controls = new MapControls(perspCam, canvas);
 controls.enableDamping = true; controls.dampingFactor = 0.11;
 controls.maxPolarAngle = 1.47; controls.minDistance = 16; controls.zoomToCursor = true;
 
-const hemi = new THREE.HemisphereLight(0xffffff, 0xcfc8ba, 1.12);
+const hemi = new THREE.HemisphereLight(0xbcd3f0, 0xd8c6a4, 0.9);
 scene.add(hemi);
-const sun = new THREE.DirectionalLight(0xfffaf0, 2.5);
+const sun = new THREE.DirectionalLight(0xfff3df, 4.2);
 sun.castShadow = true; sun.shadow.mapSize.set(4096, 4096);
-sun.shadow.bias = -0.00035; sun.shadow.normalBias = 0.32;
+sun.shadow.bias = -0.0003; sun.shadow.normalBias = 0.3; sun.shadow.radius = 2.2;
+
+// Post chain: beauty (4x MSAA, half-float) -> ground-truth ambient occlusion -> tone map -> grade
+const LITE = new URLSearchParams(location.search).has('lite');
+const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 }));
+const renderPass = new RenderPass(scene, perspCam);
+const gtao = new GTAOPass(scene, perspCam, 4, 4);
+gtao.updateGtaoMaterial({ radius: 3.2, distanceExponent: 1.4, thickness: 1.6, distanceFallOff: 1, scale: 1.15, samples: 12, screenSpaceRadius: false });
+gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 12 });
+gtao.blendIntensity = 0.95;
+gtao.enabled = !LITE;
+const gradePass = new ShaderPass(GradeShader);
+composer.addPass(renderPass); composer.addPass(gtao); composer.addPass(new OutputPass()); composer.addPass(gradePass);
 scene.add(sun, sun.target);
 
 const TH = city.theta, cT = Math.cos(TH), sT = Math.sin(TH);
@@ -101,11 +120,11 @@ const geomOf = b => {
 
 const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.91, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
 applyTravertineShader(mat);
-const matSel = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.86, side: THREE.DoubleSide, color: 0xffffff, emissive: 0x9e281d, emissiveIntensity: 0.11, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+const matSel = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.86, side: THREE.DoubleSide, color: 0xffffff, emissive: 0x9e281d, emissiveIntensity: 0.05, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
 applyTravertineShader(matSel);
-const matHi = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.88, side: THREE.DoubleSide, color: 0xffffff, emissive: 0x9e281d, emissiveIntensity: 0.07, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+const matHi = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.88, side: THREE.DoubleSide, color: 0xffffff, emissive: 0x9e281d, emissiveIntensity: 0.035, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
 applyTravertineShader(matHi);
-const matDim = new THREE.MeshStandardMaterial({ color: 0xe6e0d4, roughness: 1, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+const matDim = new THREE.MeshStandardMaterial({ color: 0xa2957d, roughness: 1, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
 const ink = new THREE.LineBasicMaterial({ color: 0x26221e, transparent: true, opacity: 0.68 });
 const inkSel = new THREE.LineBasicMaterial({ color: 0x9e2418, transparent: true, opacity: 0.92 });
 const inkDim = new THREE.LineBasicMaterial({ color: 0x26221e, transparent: true, opacity: 0.13 });
@@ -114,7 +133,9 @@ const inkDim = new THREE.LineBasicMaterial({ color: 0x26221e, transparent: true,
 const SIZE = 3800, gGeo = new THREE.PlaneGeometry(SIZE, SIZE, 210, 210);
 gGeo.rotateX(-Math.PI / 2);
 gGeo.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(gGeo.attributes.position.count * 3), 3));
-const groundMesh = new THREE.Mesh(gGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.98 }));
+const groundMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.98 });
+applyGroundShader(groundMat, 'earth');
+const groundMesh = new THREE.Mesh(gGeo, groundMat);
 groundMesh.receiveShadow = true;
 scene.add(groundMesh);
 
@@ -128,15 +149,16 @@ function reground() {
     const x = p.getX(i), z = p.getZ(i), y = ground(x, z) - 0.06;
     p.setY(i, y);
     const d = Math.hypot(x, z);
-    let r = 0.865, g = 0.838, b = 0.782;
+    let r = 0.56, g = 0.485, b = 0.37; // trodden earth inside the walls
     if (d > Rw + 18 && d < Rw + 96) {
-      r = 0.915; g = 0.892; b = 0.842; // dressed stone compass terrace
-    } else if (y < SEA_Y + 0.35) {
-      const sub = Math.min(1, (SEA_Y + 0.35 - y) / 6);
-      r = 0.78 - 0.28 * sub; g = 0.76 - 0.16 * sub; b = 0.69 - 0.04 * sub;
+      r = 0.64; g = 0.60; b = 0.52; // dressed stone compass terrace
+    } else if (y < SEA_Y + 1.6) {
+      const sub = Math.min(1, Math.max(0, (SEA_Y + 0.35 - y) / 6));
+      r = 0.83 - 0.36 * sub; g = 0.78 - 0.20 * sub; b = 0.63 + 0.0 * sub; // sand, then seabed
     } else if (d >= Rw + 96) {
-      const hT = Math.min(1, Math.max(0, (y + 1) / 48));
-      r = 0.825 + 0.055 * hT; g = 0.808 + 0.042 * hT; b = 0.735 + 0.055 * hT;
+      const hT = Math.min(1, Math.max(0, (y + 1) / 48)), k = Math.min(1, (d - Rw - 96) / 60);
+      // olive and wheat country; green channel leads red so the shader lays field parcels here
+      r = 0.56 * (1 - k) + (0.50 + 0.07 * hT) * k; g = 0.485 * (1 - k) + (0.525 + 0.04 * hT) * k; b = 0.37 * (1 - k) + (0.34 + 0.05 * hT) * k;
     }
     colAttr.setXYZ(i, r, g, b);
   }
@@ -144,11 +166,13 @@ function reground() {
   gGeo.computeVertexNormals();
 }
 
-const pads = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0xf3efe6, roughness: 0.98 }), E.length);
+const pads = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0xd6cdb9, roughness: 0.98 }), E.length);
 pads.receiveShadow = true; scene.add(pads);
 
 let frame = null, streetsObj = null, contoursObj = null, compassObj = null, extLandmarksMesh = null;
-const paving = new THREE.MeshStandardMaterial({ color: 0xede7dc, roughness: 0.96 });
+const paving = new THREE.MeshStandardMaterial({ color: 0xc4bba9, roughness: 0.9 });
+applyGroundShader(paving, 'paving');
+let grovesObj = null;
 const kerb = new THREE.LineBasicMaterial({ color: 0x2a2622, transparent: true, opacity: 0.28 });
 
 function restreet() {
@@ -180,22 +204,39 @@ function restreet() {
 }
 
 let sunHour = 15.25, sunSeason = 'equinox', sunPlaying = false;
+const sunDir = new THREE.Vector3(0.4, 0.7, 0.5);
+// Shadow frustum follows the view: tight and crisp at eye height, wide from the air
+function fitShadow() {
+  const walk = camMode === 'walk';
+  const c = walk ? perspCam.position : controls.target;
+  const dist = walk ? 0 : camMode === 'plan' ? 900 / orthoCam.zoom : perspCam.position.distanceTo(controls.target);
+  const ext = Math.min(RAD + 190, Math.max(walk ? 150 : 170, dist * 0.62));
+  const sc = sun.shadow.camera, far = RAD * 3.2 + 600;
+  // snap the centre to shadow texels so the map does not swim while panning
+  const tex = (2 * ext) / 4096 * 8, cx = Math.round(c.x / tex) * tex, cz = Math.round(c.z / tex) * tex;
+  sun.target.position.set(cx, 0, cz);
+  sun.position.set(cx, 0, cz).addScaledVector(sunDir, far * 0.5);
+  if (sc.right !== ext) { sc.left = sc.bottom = -ext; sc.right = sc.top = ext; sc.near = 10; sc.far = far; sc.updateProjectionMatrix(); }
+  sun.shadow.normalBias = 0.05 + ext / 1400;
+}
 function updateSun() {
   const s = computeRomanSun(sunHour, sunSeason);
-  const dist = RAD * 2.5;
-  sun.position.copy(s.dir).multiplyScalar(dist);
   sun.color.copy(s.sunColor);
+  sunDir.copy(s.dir);
   hemi.color.copy(s.hemiTop);
   hemi.groundColor.copy(s.hemiGround);
-  scene.background.copy(s.skyColor);
-  if (scene.fog) scene.fog.color.copy(s.skyColor);
+  scene.background.copy(s.horizon);
+  if (scene.fog) scene.fog.color.copy(s.horizon);
+  const su = sky.userData.u;
+  su.uSun.value.copy(s.dir); su.uZenith.value.copy(s.zenith); su.uHorizon.value.copy(s.horizon); su.uSunCol.value.copy(s.sunColor);
+  sun.intensity = 4.2 * Math.min(1, 0.35 + s.altDeg / 28);
   const hh = Math.floor(sunHour), mm = Math.round((sunHour - hh) * 60);
   $('#sunReadout').textContent = `${String(hh).padStart(2, '0')}:${String(mm === 60 ? 59 : mm).padStart(2, '0')} · ${s.shadowNine.toFixed(1)}:9`;
   dirty = true;
 }
 
 function reframe() {
-  for (const obj of [frame, contoursObj, compassObj, extLandmarksMesh]) {
+  for (const obj of [frame, contoursObj, compassObj, extLandmarksMesh, grovesObj]) {
     if (obj) { scene.remove(obj); obj.traverse(o => o.geometry?.dispose()); }
   }
   const r = RAD, m = new M(), Rw = r + 14, n = Math.ceil((2 * Math.PI * Rw) / city.bowshot), S = C.stone;
@@ -240,10 +281,9 @@ function reframe() {
     scene.add(extLandmarksMesh);
   }
 
-  const sc = sun.shadow.camera;
-  sc.left = sc.bottom = -(RAD + 180); sc.right = sc.top = RAD + 180; sc.near = 10; sc.far = RAD * 6.5;
-  sc.updateProjectionMatrix();
-  scene.fog = new THREE.Fog(PAPER, RAD * 3.8, RAD * 10.5);
+  grovesObj = buildGroves(r, (x, z) => ground(x, z, r), mat);
+  scene.add(grovesObj);
+  scene.fog = new THREE.FogExp2(PAPER, 0.00027);
   controls.maxDistance = RAD * 5.2;
   updateSun();
 }
@@ -371,7 +411,7 @@ function drawLabs() {
   for (const L of labs) {
     if (L === selLab && !sel) { L.el.style.display = 'none'; continue; }
     if (L.cls === 'plaque' && !L.active) { L.el.style.display = 'none'; continue; }
-    if (camMode === 'walk' && (L.cls === 'l0' || L.cls === 'l1')) { L.el.style.display = 'none'; continue; }
+    if (camMode === 'walk' && (L.cls === 'l0' || L.cls === 'l1' || L.cls.startsWith('wind'))) { L.el.style.display = 'none'; continue; }
     if (L.cls === 'l1' && dist > 620) { L.el.style.display = 'none'; continue; }
     if (L.cls.includes('subwind') && dist > 720) { L.el.style.display = 'none'; continue; }
     if (L.cls === 'l0' && dist < 135 && camMode !== 'plan') { L.el.style.display = 'none'; continue; }
@@ -380,9 +420,8 @@ function drawLabs() {
     const sx = (v3.x * 0.5 + 0.5) * w, sy = (-v3.y * 0.5 + 0.5) * h;
     // Avoid overlapping HUD cards (#head, #viewbar, #dock) on desktop & mobile
     if (w > 960) {
-      if (sx < 418 && sy < 218 && L.prio >= 1) { L.el.style.display = 'none'; continue; }
-      if (sx > w - 410 && sy < 56) { L.el.style.display = 'none'; continue; }
-      if (sy > h - 52) { L.el.style.display = 'none'; continue; }
+      if (sx < 450 && sy < 200 && L.prio >= 1) { L.el.style.display = 'none'; continue; }
+      if (sy > h - 64) { L.el.style.display = 'none'; continue; }
     } else {
       if (sy < 155 || sy > h - 84) { L.el.style.display = 'none'; continue; }
     }
@@ -417,14 +456,14 @@ function updateKeysHint() {
   const k = $('#keys'), sb = $('#scaleBar');
   if (camMode === 'walk') {
     sb.hidden = true;
-    k.innerHTML = '<span><b>WASD / Arrows</b> walk street</span><span><b>Shift</b> stride</span><span><b>Space</b> step up</span><span><b>drag</b> look around</span><span><b>click</b> inspect monument</span><span><b>Esc</b> aerial 3D</span>';
+    k.innerHTML = '<span><b>W A S D</b> walk</span><span><b>drag</b> look</span><span><b>Shift</b> run</span><span><b>click</b> read a building</span><span><b>Esc</b> back to the air</span>';
   } else if (camMode === 'plan') {
     sb.hidden = false;
-    k.innerHTML = '<span><b>drag</b> pan blueprint</span><span><b>wheel</b> zoom scale</span><span><b>click</b> open building</span><span><b>1–4</b> rearrange matrix</span>';
+    k.innerHTML = '<span><b>drag</b> pan</span><span><b>wheel</b> zoom</span><span><b>click</b> read a building</span>';
     updateScaleBar();
   } else {
     sb.hidden = true;
-    k.innerHTML = '<span><b>drag</b> move</span><span><b>right-drag</b> orbit</span><span><b>wheel</b> zoom</span><span><b>click</b> open</span><span><b>F</b> walk street</span><span><b>1–4</b> matrix</span>';
+    k.innerHTML = '<span><b>drag</b> move</span><span><b>right-drag</b> turn</span><span><b>wheel</b> zoom</span><span><b>click</b> read a building</span><span><b>F</b> walk</span>';
   }
 }
 
@@ -478,10 +517,10 @@ function setCamMode(mode, targetEl = sel) {
     let tx = 0, tz = 28, lookX = 0, lookY = 6, lookZ = -18;
     if (targetEl) {
       const m = targetEl.mesh, rot = m.rotation.y;
-      const dFront = Math.max(targetEl.w, targetEl.d) * 0.82 + Math.max(24, targetEl.h * 1.15);
+      const dFront = Math.max(targetEl.w, targetEl.d) * 0.62 + Math.max(13, targetEl.h * 1.0);
       // Pick the clearest street/plaza vantage angle in front of or diagonally framing the facade
       let bestScore = -1e9;
-      for (const da of [0.32, -0.32, 0, 0.68, -0.68, 1.1, -1.1, Math.PI + 0.3]) {
+      for (const da of [0.32, -0.32, 0, 0.68, -0.68, 1.1, -1.1, 1.6, -1.6, 2.2, -2.2, Math.PI + 0.3, Math.PI - 0.3]) {
         const a = rot + da;
         const cx = m.position.x + Math.sin(a) * dFront;
         const cz = m.position.z + Math.cos(a) * dFront;
@@ -492,15 +531,24 @@ function setCamMode(mode, targetEl = sel) {
           const clr = Math.hypot(cx - o.mesh.position.x, cz - o.mesh.position.z) - rO;
           if (clr < minClear) minClear = clr;
         }
-        const score = Math.min(22, minClear) - Math.abs(da) * 3.5;
+        // nothing may stand between the eye and the building
+        let blocked = 0;
+        const sx = m.position.x - cx, sz = m.position.z - cz, sl = sx * sx + sz * sz;
+        for (const o of E) {
+          if (o === targetEl) continue;
+          const t = Math.max(0, Math.min(0.8, ((o.mesh.position.x - cx) * sx + (o.mesh.position.z - cz) * sz) / sl));
+          if (Math.hypot(cx + sx * t - o.mesh.position.x, cz + sz * t - o.mesh.position.z) < Math.max(o.w, o.d) * 0.45) blocked++;
+        }
+        if (Math.hypot(cx, cz) > RAD - 6) blocked += 2;
+        const score = Math.min(22, minClear) - Math.abs(da) * 3.5 - blocked * 40 - Math.max(0, m.position.y - 0.6 - ground(cx, cz)) * 9;
         if (score > bestScore) { bestScore = score; tx = cx; tz = cz; }
       }
       lookX = m.position.x; lookY = m.position.y + Math.min(targetEl.h * 0.45, 11); lookZ = m.position.z;
     } else {
       const gy = ground(0, 0);
-      tx = 18; tz = 34; lookX = 0; lookY = gy + 6.5; lookZ = -24;
+      tx = 10; tz = 6; lookX = -4; lookY = gy + 7.5; lookZ = -60;
     }
-    const ty = ground(tx, tz) + 2.05;
+    const ty = walkGround(tx, tz) + 1.7;
     walkState.yaw = Math.atan2(lookX - tx, lookZ - tz);
     walkState.pitch = Math.max(-0.35, Math.min(0.45, Math.atan2(lookY - ty, Math.hypot(lookX - tx, lookZ - tz))));
     fly = {
@@ -527,9 +575,19 @@ function setCamMode(mode, targetEl = sel) {
     }
   }
   updateKeysHint();
-  dirty = true;
+  paint();
 }
 
+// Where feet stand: the terrain, or the terrace of the building whose plot one is on
+function walkGround(x, z) {
+  let y = Math.max(SEA_Y + 0.5, ground(x, z));
+  const u = x * cT + z * sT, v = -x * sT + z * cT;
+  for (const e of E) {
+    const p = e.mesh.position, eu = p.x * cT + p.z * sT, ev = -p.x * sT + p.z * cT;
+    if (Math.abs(u - eu) < ((e.lotW || e.w) + 3.4) / 2 && Math.abs(v - ev) < ((e.lotD || e.d) + 3.4) / 2 && p.y > y) y = p.y;
+  }
+  return y;
+}
 function syncWalkLook() {
   const cp = Math.cos(walkState.pitch), sp = Math.sin(walkState.pitch);
   const dx = Math.sin(walkState.yaw) * cp, dz = Math.cos(walkState.yaw) * cp;
@@ -539,8 +597,8 @@ function syncWalkLook() {
 // ---------------------------------------------------------------- selection, highlight & flight
 function paint() {
   for (const e of E) {
-    const m = e === sel ? matSel : hi ? (hi.has(e) ? (e === hover ? matSel : matHi) : matDim) : e === hover ? matHi : mat;
-    const edgeM = e === sel ? inkSel : m === matDim ? inkDim : ink;
+    const m = e === sel ? (camMode === 'walk' ? mat : matSel) : hi ? (hi.has(e) ? (e === hover ? matSel : matHi) : matDim) : e === hover ? matHi : mat;
+    const edgeM = e === sel && camMode !== 'walk' ? inkSel : m === matDim ? inkDim : ink;
     if (e.mesh.material !== m) {
       e.mesh.material = m;
       e.mesh.castShadow = m !== matDim;
@@ -591,7 +649,7 @@ function flySet(set) {
   flyTo(c, Math.max(240, Math.max(s.x, s.z) * 1.85 + 150), -0.35, 0.82);
 }
 
-const home = () => flyTo(new THREE.Vector3(0, 0, RAD * 0.05), RAD * 3.25, -0.42, 0.86, 1200);
+const home = () => flyTo(new THREE.Vector3(0, 0, RAD * 0.05), RAD * 2.9, -0.42, 0.93, 1500);
 
 function setBy(m, instant) {
   if (m === by && !instant) return;
@@ -789,22 +847,22 @@ const PAGES = {
     hi = null; sel = null; activeTour = null; syncTourBar(); home();
     const b = E.filter(e => e.status === 'built');
     return `${crumbs()}<h2>One city, built twice from the ten books</h2>
-<p class="lead">Every monument in this city stands for passages of Vitruvius’ <i>De Architectura</i>. <b>Where</b> it stands is knowledge as data: 729 passages arranged across four spatial matrices. <b>How</b> it is built is knowledge applied: its 3D proportions follow the exact rules quoted in the text, aligned with <b>M. H. Morgan’s 1914 Harvard pages (pp. 3–319)</b> and <b>F. Krohn’s 1912 Original Latin</b>.</p>
+<p class="lead">Every building here stands for passages of Vitruvius’ <i>De Architectura</i>. <b>Where</b> it stands is the text as data: 729 passages, arranged four ways. <b>How</b> it is built is the text applied: each form follows the rule that describes it, quoted word for word and tied to its page in Morgan’s English (1914) and Krohn’s Latin (1912).</p>
 <div class="nums">
-  <div><b>${E.length}</b>monuments</div>
-  <div><b>729</b>passages (pp. 3–319)</div>
-  <div><b>${Object.keys(RULES).length}</b>verbatim rules</div>
-  <div><b>61</b>1914 plates</div>
+  <div><b>${E.length}</b>buildings and machines</div>
+  <div><b>729</b>passages, pp. 3–319</div>
+  <div><b>${Object.keys(RULES).length}</b>rules, quoted verbatim</div>
+  <div><b>61</b>plates of 1914</div>
 </div>
 <div class="action-row">
-  <a class="btn-sm primary" href="#/tours">Start a Guided Tour</a>
-  <button type="button" class="btn-sm" data-act="walk-forum">Walk the Forum (FPS)</button>
-  <button type="button" class="btn-sm cin" data-act="open-plate">III.5 Ionic Plate (78 bindings)</button>
+  <a class="btn-sm primary" href="#/tours">Take a guided tour</a>
+  <button type="button" class="btn-sm" data-act="walk-forum">Walk the forum</button>
+  <button type="button" class="btn-sm cin" data-act="open-plate">One column, sentence by sentence</button>
 </div>
 <p class="note">${b.length} monuments are built directly as the architecture or machine their passages describe (${pl(b.reduce((s, e) => s + e.passages.length, 0), 'passage')}); ${E.length - b.length} civic stoas, exedrae, and libraries house theoretical arguments, stories, and prefaces (${E.filter(e => e.status !== 'built').reduce((s, e) => s + e.passages.length, 0)} passages).</p>
-<h3>Four Spatial Matrices <small>knowledge as data</small></h3>
+<h3>Four arrangements <small>the text as data</small></h3>
 <ul class="list">${MATS.map(m => `<li><a href="#/?by=${m}">${city.matrices[m].label}</a><span>${esc(city.matrices[m].note)}</span></li>`).join('')}</ul>
-<h3>Curated Guided Tours <small>walk the treatise</small></h3>
+<h3>Guided tours <small>walk the treatise</small></h3>
 ${city.tours.slice(0, 3).map(t => `<div class="tour-card"><h4><a href="#/tour/${t.id}/0" style="border:0">${esc(t.title)}</a></h4><p>${esc(t.sub)}</p><a class="btn-sm" href="#/tour/${t.id}/0">Begin (${t.stops.length} stops) →</a></div>`).join('')}
 <p style="margin:6px 0 0"><a href="#/tours">View all ${city.tours.length} guided tours →</a></p>
 <h3>City Frame <small>built from Books I &amp; V</small></h3>
@@ -850,33 +908,33 @@ ${city.tours.slice(0, 3).map(t => `<div class="tour-card"><h4><a href="#/tour/${
   <a href="#/f/${e.form}">${esc(F.label)}</a> · ${pl(e.passages.length, 'passage')} · ${e.words} words${e.measures ? ` · ${pl(e.measures, 'measure')}` : ''}
 </div>
 <div class="action-row">
-  <button type="button" class="btn-sm primary" data-act="walk-here" data-el="${e.id}">Walk Street Here (FPS)</button>
-  <button type="button" class="btn-sm" data-act="cite" data-el="${e.id}" data-pid="${pid || e.passages[0]}">Copy Citation</button>
-  ${e.passages.length > 1 ? `<button type="button" class="btn-sm" data-act="expand-all">Expand All Passages</button>` : ''}
-  ${hasIonicPlate ? `<button type="button" class="btn-sm cin" data-act="open-plate" data-ord="${(pid || e.passages[0]).split('.')[2]}">Interactive III.5 Plate (78 bindings)</button>` : ''}
+  <button type="button" class="btn-sm primary" data-act="walk-here" data-el="${e.id}">Walk here</button>
+  <button type="button" class="btn-sm" data-act="cite" data-el="${e.id}" data-pid="${pid || e.passages[0]}">Copy citation</button>
+  ${e.passages.length > 1 ? `<button type="button" class="btn-sm" data-act="expand-all">Open all passages</button>` : ''}
+  ${hasIonicPlate ? `<button type="button" class="btn-sm cin" data-act="open-plate" data-ord="${(pid || e.passages[0]).split('.')[2]}">This column, sentence by sentence</button>` : ''}
 </div>
 
-<h3>Primary Text <small>${lang === 'en' ? 'Morgan 1914 · rules underlined' : lang === 'la' ? 'Krohn 1912 · Original Latin' : 'Parallel Morgan 1914 &amp; Krohn 1912'}</small></h3>
-${e.passages.map((p, idx) => passage(p, e, p === pid || (!pid && idx === 0))).join('')}
-
-<h3>Formed by Rule <small>geometry from the text</small></h3>
+<h3>Built by these rules <small>the text applied</small></h3>
 ${F.housed ? `<p class="note">${esc(F.housed)}</p>` : ''}
 ${e.rules.length ? `<ol class="rules">${e.rules.map(ruleItem).join('')}</ol>` : '<p class="note">Built directly from the qualitative description in the passages above; no single numeric formula governs its whole envelope.</p>'}
 <p class="free">${par ? `<b>Parameters from text:</b> ${esc(par)}.<br>` : ''}<b>Module &amp; lot:</b> ${e.words} words allocate a precinct of ${(e.lotW || e.w).toFixed(0)} × ${(e.lotD || e.d).toFixed(0)} m (${Math.round((e.lotW || e.w) / FT)} × ${Math.round((e.lotD || e.d) / FT)} Roman <i>pedes</i>)${e.scale > 1.35 ? `; small apparatus scaled ${e.scale.toFixed(1)}× life size` : ''}. Proportions are invariant.</p>
 
-${figIds.length ? `<h3>Morgan &amp; Warren (1914) Plates <small>archival illustrations</small></h3>
+<h3>The text <small>${lang === 'en' ? 'Morgan 1914 · the rules are underlined' : lang === 'la' ? 'Krohn 1912 · Original Latin' : 'Parallel Morgan 1914 &amp; Krohn 1912'}</small></h3>
+${e.passages.map((p, idx) => passage(p, e, p === pid || (!pid && idx === 0))).join('')}
+
+${figIds.length ? `<h3>Plates of the 1914 edition</h3>
 ${figIds.map(fid => {
   const f = FIG_BY_ID[fid];
   return `<div class="plate-card"><div><b>Plate ${f.id}.</b> ${esc(f.title)}</div><span><a href="${scholar.editions.en.scanBase}${f.page}/mode/1up" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">p. ${f.page} scan ↗</a></span></div>`;
 }).join('')}` : ''}
 
-<h3>Placed by Data <small>four spatial matrices</small></h3>
+<h3>Where it stands <small>in each arrangement</small></h3>
 <table class="where">${MATS.map(m => `<tr class="${m === by ? 'on' : ''}"><td><a href="#/e/${e.id}?by=${m}" style="border:0">${city.matrices[m].label.replace('By ', 'by ')}</a></td><td>${rows[m]}</td></tr>`).join('')}</table>
 
-${ents.length ? `<h3>Index Cross-References <small>people, places &amp; terms</small></h3>
+${ents.length ? `<h3>People, places and terms</h3>
 <div class="pill-row">${ents.map(ent => `<a class="pill" href="#/ent/${ent.kind}/${ent.id}">${esc(ent.name)} <small>${ent.passages.length}</small></a>`).join('')}</div>` : ''}
 
-${sib.length > 1 ? `<h3>Companion Monuments in Topic</h3><ul class="list">${sib.filter(x => x !== e).map(x => `<li>${link(x)}<span>${esc(FORMS[x.form].label)}</span></li>`).join('')}</ul>` : ''}
+${sib.length > 1 ? `<h3>Beside it, on the same topic</h3><ul class="list">${sib.filter(x => x !== e).map(x => `<li>${link(x)}<span>${esc(FORMS[x.form].label)}</span></li>`).join('')}</ul>` : ''}
 <div class="pn">${i ? `<span>← ${link(E[i - 1])}</span>` : '<span></span>'}${i < E.length - 1 ? `<span>${link(E[i + 1])} →</span>` : ''}</div>`;
   },
 
@@ -1131,8 +1189,7 @@ $('#camModes').onclick = ev => {
 };
 $('#togglePanel').onclick = () => {
   const shut = document.body.classList.toggle('panel-shut');
-  $('#togglePanel').textContent = shut ? '‹ Panel' : 'Panel ›';
-  setTimeout(() => { resize(); dirty = true; }, 250);
+  $('#togglePanel').textContent = shut ? '‹' : '›';
 };
 
 // Solar Analemma controls & Soundscape
@@ -1147,7 +1204,7 @@ const sound = new VitruvianSound();
 $('#soundBtn').onclick = () => {
   const on = sound.toggle();
   $('#soundBtn').setAttribute('aria-pressed', String(on));
-  $('#soundBtn').textContent = on ? 'Sound On' : 'Sound Off';
+  $('#soundBtn').textContent = on ? 'Sound on' : 'Sound off';
 };
 
 // Search input
@@ -1262,6 +1319,7 @@ function resize() {
   const pr = renderer.getPixelRatio();
   if (canvas.width !== Math.floor(w * pr) || canvas.height !== Math.floor(h * pr)) {
     renderer.setSize(w, h, false);
+    composer.setPixelRatio(pr); composer.setSize(w, h);
     perspCam.aspect = w / h;
     perspCam.updateProjectionMatrix();
     const oH = orthoCam.top - orthoCam.bottom;
@@ -1273,6 +1331,29 @@ function resize() {
 }
 
 let lastNow = performance.now();
+new ResizeObserver(() => { dirty = true; }).observe(canvas);
+
+// ---------------------------------------------------------------- title page
+const introEl = $('#intro');
+let introOn = false;
+function startIntro() {
+  introOn = true;
+  $('#enterBtn').disabled = false; $('#enterBtn').textContent = 'Enter the city';
+  controls.target.set(0, 6, 0);
+  perspCam.position.setFromSphericalCoords(RAD * 1.75, 1.33, 0.9).add(controls.target);
+  controls.autoRotate = true; controls.autoRotateSpeed = 0.32;
+}
+function endIntro(then) {
+  if (!introOn) return;
+  introOn = false; controls.autoRotate = false;
+  introEl.classList.add('out'); document.body.classList.remove('intro');
+  setTimeout(() => { introEl.hidden = true; }, 1000);
+  fly = null; flyTo(new THREE.Vector3(0, 0, RAD * 0.05), RAD * 2.9, -0.42, 0.93, 3200);
+  if (then) setTimeout(then, 600);
+}
+$('#enterBtn').onclick = () => endIntro();
+$('#enterTour').onclick = () => endIntro(() => go('/tours'));
+addEventListener('keydown', ev => { if (introOn && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); endIntro(); } });
 function frameLoop(now) {
   const dt = Math.min(0.05, (now - lastNow) / 1000);
   lastNow = now;
@@ -1325,7 +1406,8 @@ function frameLoop(now) {
     let s = (ks.has('d') ? 1 : 0) - (ks.has('a') ? 1 : 0);
     const turn = (ks.has('arrowleft') ? 1 : 0) - (ks.has('arrowright') ? 1 : 0);
     if (turn) { walkState.yaw += turn * 1.65 * dt; dirty = true; }
-    if (f || s || walkState.hopY > 0 || Math.abs(walkState.velY) > 0.01) {
+    const settle = Math.abs(perspCam.position.y - walkGround(perspCam.position.x, perspCam.position.z) - 1.7 - walkState.hopY) > 0.02;
+    if (f || s || settle || walkState.hopY > 0 || Math.abs(walkState.velY) > 0.01) {
       const len = Math.hypot(f, s) || 1; f /= len; s /= len;
       const spd = (ks.has('shift') ? 34 : 15) * dt;
       const sy = Math.sin(walkState.yaw), cy = Math.cos(walkState.yaw);
@@ -1337,23 +1419,31 @@ function frameLoop(now) {
       perspCam.position.z = d > lim ? (nz / d) * lim : nz;
       walkState.hopY = Math.max(0, walkState.hopY + walkState.velY * dt);
       walkState.velY = walkState.hopY > 0 ? walkState.velY - 15 * dt : 0;
-      const baseG = Math.max(SEA_Y + 0.5, ground(perspCam.position.x, perspCam.position.z));
-      perspCam.position.y = baseG + 2.05 + walkState.hopY;
+      const baseG = walkGround(perspCam.position.x, perspCam.position.z) + 1.7 + walkState.hopY;
+      perspCam.position.y += (baseG - perspCam.position.y) * Math.min(1, dt * 12);
       syncWalkLook();
       dirty = true;
     }
   }
 
   if (camMode !== 'walk' && controls.update()) dirty = true;
+  if (introOn) dirty = true;
 
   if (dirty) {
     dirty = false;
     waterMesh.userData.uTime.value = now * 0.001;
     const d = camMode === 'walk' ? 60 : camMode === 'plan' ? 420 / orthoCam.zoom : activeCam.position.distanceTo(controls.target);
     ink.opacity = Math.min(0.76, Math.max(0.16, 1.02 - d / 650));
-    inkDim.opacity = ink.opacity * 0.32;
+    inkDim.opacity = ink.opacity * 0.18;
     kerb.opacity = Math.min(0.42, Math.max(0.12, 0.72 - d / 920));
-    renderer.render(scene, activeCam);
+    fitShadow();
+    scene.fog.density = camMode === 'walk' ? 0.0007 : camMode === 'plan' ? 0 : 0.00009 + 0.00016 * Math.min(1, Math.max(0, (perspCam.position.y - controls.target.y) / d < 0.5 ? 1 - (perspCam.position.y - controls.target.y) / d / 0.5 : 0));
+    sky.position.copy(activeCam.position);
+    renderPass.camera = gtao.camera = activeCam;
+    gtao.enabled = !LITE && camMode !== 'plan';
+    gtao.updateGtaoMaterial({ radius: Math.min(9, Math.max(1.4, d * 0.011)) });
+    gradePass.uniforms.uTime.value = now * 0.001;
+    composer.render();
     drawLabs();
   }
   requestAnimationFrame(frameLoop);
@@ -1365,10 +1455,15 @@ updateKeysHint();
   const m0 = new URLSearchParams(location.hash.split('?')[1] || '').get('by');
   setBy(city.matrices[m0] ? m0 : 'theme', true);
 }
-perspCam.position.setFromSphericalCoords(RAD * 3.25, 0.86, -0.42);
+perspCam.position.setFromSphericalCoords(RAD * 2.9, 0.93, -0.42);
 controls.target.set(0, 0, RAD * 0.05);
 route();
 if (fly) { controls.target.copy(fly.tt); perspCam.position.copy(fly.tp); fly = null; }
+if (document.body.classList.contains('intro')) startIntro();
+{
+  const c0 = new URLSearchParams(location.hash.split('?')[1] || '').get('cam');
+  if (c0 === 'walk' || c0 === 'plan') setCamMode(c0, sel);
+}
 fetch(`${BASE}/data/passages.json`).then(r => r.json()).then(arr => {
   PASSAGES = arr;
   TEXT = {}; P_META = {};
@@ -1380,4 +1475,12 @@ fetch(`${BASE}/data/passages.json`).then(r => r.json()).then(arr => {
 requestAnimationFrame(frameLoop);
 requestAnimationFrame(edgeStep);
 
-window.__city = { city, E, go, setBy, setCamMode, openIonicPlate, updateSun: (h, s) => { sunHour = h; if (s) sunSeason = s; updateSun(); } };
+const bench = (n = 40) => {
+  const gl = renderer.getContext(), ts = [];
+  for (let i = 0; i < n; i++) { const t = performance.now(); composer.render(); gl.finish(); ts.push(performance.now() - t); }
+  ts.sort((x, y) => x - y);
+  renderer.info.autoReset = false; renderer.info.reset(); composer.render();
+  const out = { median: ts[n >> 1], max: ts[n - 1], tris: renderer.info.render.triangles, calls: renderer.info.render.calls };
+  renderer.info.autoReset = true; return out;
+};
+window.__city = { city, E, go, setBy, setCamMode, openIonicPlate, bench, updateSun: (h, s) => { sunHour = h; if (s) sunSeason = s; updateSun(); } };

@@ -222,25 +222,162 @@ export function buildCompassRose(r, theta, terrainFn) {
 
 function eachCol(x, y, z, n) { /* decorative pharos lantern handled by cylinder */ void x; void y; void z; void n; }
 
-// Procedural world-space travertine micro-grain injected into MeshStandardMaterial (0 KB texture cost)
-export function applyTravertineShader(material) {
-  material.onBeforeCompile = shader => {
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vWorldPos;')
-      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-    shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>
-varying vec3 vWorldPos;
+// Procedural stone, entirely in the shader (0 KB of textures):
+// bedding grain, opus quadratum coursing on flat walls (courses of 2 pedes), broad weathering.
+const NOISE_GLSL = /* glsl */ `varying vec3 vWorldPos;
 float vHash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float vNoise(vec2 p){
   vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   return mix(mix(vHash(i), vHash(i + vec2(1.0,0.0)), f.x), mix(vHash(i + vec2(0.0,1.0)), vHash(i + vec2(1.0,1.0)), f.x), f.y);
-}`)
-      .replace('#include <color_fragment>', `#include <color_fragment>
-float bed = vNoise(vec2(vWorldPos.x * 0.35 + vWorldPos.z * 0.35, vWorldPos.y * 1.9));
-float fine = vNoise(vWorldPos.xz * 2.4 + vWorldPos.y * 0.7);
-diffuseColor.rgb *= (0.965 + 0.048 * bed + 0.022 * fine);`);
+}
+float vFbm(vec2 p){ return 0.5 * vNoise(p) + 0.25 * vNoise(p * 2.03 + 7.1) + 0.125 * vNoise(p * 4.01 + 3.7) + 0.0625 * vNoise(p * 8.1); }
+// antialiased joint: 1 on the joint line, 0 elsewhere; fades out before the period falls under a few pixels
+float vJoint(float c, float period, float wd){
+  float u = c / period, fw = fwidth(u);
+  float e = 0.5 - abs(fract(u) - 0.5);
+  float line = 1.0 - smoothstep(wd / period, wd / period + fw, e);
+  return line * (1.0 - smoothstep(0.10, 0.30, fw));
+}`;
+const withWorldPos = shader => {
+  shader.vertexShader = shader.vertexShader
+    .replace('#include <common>', '#include <common>\nvarying vec3 vWorldPos;')
+    .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+  shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\n' + NOISE_GLSL);
+};
+export function applyTravertineShader(material) {
+  material.onBeforeCompile = shader => {
+    withWorldPos(shader);
+    shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+{
+  vec3 gN = normalize(cross(dFdx(vWorldPos), dFdy(vWorldPos)));
+  vec3 sN = normalize(cross(dFdx(vViewPosition), dFdy(vViewPosition)));
+  float flatF = smoothstep(0.9990, 0.99995, abs(dot(sN, normalize(vNormal)))) * (1.0 - smoothstep(0.00002, 0.0004, length(fwidth(normalize(vNormal)))));
+  float lum = dot(diffuseColor.rgb, vec3(0.3333));
+  float sat = max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b)) - min(diffuseColor.r, min(diffuseColor.g, diffuseColor.b));
+  float stone = smoothstep(0.55, 0.70, lum) * (1.0 - smoothstep(0.10, 0.18, sat));
+  float wall = (1.0 - smoothstep(0.25, 0.5, abs(gN.y))) * stone;
+  float cH = 0.592, cL = 1.184;
+  float row = floor(vWorldPos.y / cH);
+  float along = dot(vWorldPos.xz, normalize(vec2(-gN.z, gN.x) + 1e-5)) + mod(row, 2.0) * cL * 0.5;
+  float jH = vJoint(vWorldPos.y, cH, 0.012);
+  float jV = vJoint(along, cL, 0.012);
+  float blockTone = vHash(vec2(floor(along / cL), row)) - 0.5;
+  float fadeB = 1.0 - smoothstep(0.10, 0.30, fwidth(vWorldPos.y / cH));
+  diffuseColor.rgb *= 1.0 - wall * (0.13 * max(jH, jV * flatF) - 0.045 * blockTone * fadeB * flatF);
+  float bed = vNoise(vec2(dot(vWorldPos.xz, vec2(0.35)), vWorldPos.y * 2.3));
+  float fine = vNoise(vWorldPos.xz * 3.1 + vWorldPos.y * 1.3);
+  float broad = vFbm(vWorldPos.xz * 0.045 + vWorldPos.y * 0.02);
+  diffuseColor.rgb *= 0.955 + 0.05 * bed + 0.03 * fine;
+  diffuseColor.rgb *= mix(vec3(1.0), vec3(1.035, 1.0, 0.94), (broad - 0.45) * 0.9 * stone);
+}`);
   };
+  material.customProgramCacheKey = () => 'travertine2';
+}
+
+// Ground: earth inside the walls, olive-and-wheat Campagna with field parcels outside. Streets: paving slabs.
+export function applyGroundShader(material, kind = 'earth') {
+  material.onBeforeCompile = shader => {
+    withWorldPos(shader);
+    shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', kind === 'paving' ? `#include <color_fragment>
+{
+  vec2 p = vWorldPos.xz * mat2(0.9239, -0.3827, 0.3827, 0.9239);
+  float row = floor(p.y / 1.48);
+  float ax = p.x + mod(row, 2.0) * 1.11;
+  float j = max(vJoint(p.y, 1.48, 0.03), vJoint(ax, 2.22, 0.03));
+  float tone = vHash(vec2(floor(ax / 2.22), row)) - 0.5;
+  float fd = 1.0 - smoothstep(0.10, 0.30, fwidth(p.y / 1.48));
+  diffuseColor.rgb *= 1.0 - 0.22 * j + 0.07 * tone * fd;
+  diffuseColor.rgb *= 0.95 + 0.08 * vFbm(vWorldPos.xz * 0.21);
+}` : `#include <color_fragment>
+{
+  float n1 = vFbm(vWorldPos.xz * 0.012), n2 = vFbm(vWorldPos.xz * 0.11 + 13.0), n3 = vNoise(vWorldPos.xz * 1.7);
+  float field = smoothstep(0.0, 0.012, vColor.g - vColor.r);
+  vec2 q = vWorldPos.xz * mat2(0.9239, -0.3827, 0.3827, 0.9239) / 71.0;
+  float parcel = vHash(floor(q));
+  float pj = max(vJoint(q.x, 1.0, 0.012), vJoint(q.y, 1.0, 0.012));
+  vec3 crop = mix(vec3(0.86, 0.96, 0.78), vec3(1.16, 1.06, 0.80), parcel);
+  float furrow = 0.5 + 0.5 * sin((parcel > 0.5 ? q.x : q.y) * 156.0);
+  float ffade = 1.0 - smoothstep(0.08, 0.3, fwidth(q.x * 25.0));
+  diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * crop * (0.97 + 0.06 * furrow * ffade) * (1.0 - 0.12 * pj), field);
+  diffuseColor.rgb *= 0.90 + 0.13 * n1 + 0.07 * n2 + 0.035 * n3;
+}`);
+  };
+  material.customProgramCacheKey = () => 'ground-' + kind;
+}
+
+// Sky: analytic gradient dome with horizon haze, a soft solar disc and faint cirrus; follows the camera.
+export function createSky() {
+  const u = { uSun: { value: new THREE.Vector3(0, 1, 0) }, uZenith: { value: new THREE.Color() }, uHorizon: { value: new THREE.Color() }, uSunCol: { value: new THREE.Color() } };
+  const mat = new THREE.ShaderMaterial({
+    uniforms: u, side: THREE.BackSide, depthWrite: false, fog: false,
+    vertexShader: 'varying vec3 vDir; void main(){ vDir = position; vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position = p.xyww; }',
+    fragmentShader: `varying vec3 vDir; uniform vec3 uSun, uZenith, uHorizon, uSunCol;
+float h21(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float n2(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f); return mix(mix(h21(i), h21(i+vec2(1,0)), f.x), mix(h21(i+vec2(0,1)), h21(i+vec2(1,1)), f.x), f.y); }
+void main(){
+  vec3 d = normalize(vDir);
+  float h = max(d.y, 0.0);
+  vec3 col = mix(uHorizon, uZenith, pow(h, 0.42));
+  float sd = max(dot(d, normalize(uSun)), 0.0);
+  col += uSunCol * (0.16 * pow(sd, 6.0) + 0.5 * pow(sd, 90.0) + 3.5 * smoothstep(0.99955, 0.9998, sd));
+  vec2 cp = d.xz / (d.y + 0.18) * 1.6;
+  float c = n2(cp * vec2(1.0, 2.6)) * 0.55 + n2(cp * vec2(2.3, 5.9) + 4.0) * 0.3 + n2(cp * 9.0) * 0.15;
+  col = mix(col, vec3(1.0, 0.985, 0.96) * (0.9 + 0.5 * pow(sd, 4.0)), smoothstep(0.52, 0.9, c) * 0.42 * smoothstep(0.02, 0.3, d.y));
+  col = mix(uHorizon, col, smoothstep(-0.02, 0.06, d.y));
+  gl_FragColor = vec4(col, 1.0);
+}`,
+  });
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 16), mat);
+  mesh.scale.setScalar(4000); mesh.frustumCulled = false; mesh.renderOrder = -10;
+  mesh.userData.u = u;
+  return mesh;
+}
+
+// Final grade after tone mapping: gentle vignette and paper grain.
+export const GradeShader = {
+  uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uVig: { value: 0.22 } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float uTime, uVig; varying vec2 vUv;
+float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+void main(){
+  vec4 c = texture2D(tDiffuse, vUv);
+  vec2 q = vUv - 0.5;
+  c.rgb = mix(c.rgb, c.rgb * c.rgb * (3.0 - 2.0 * c.rgb), 0.38);
+  float l = dot(c.rgb, vec3(0.299, 0.587, 0.114)); c.rgb = mix(vec3(l), c.rgb, 1.12);
+  c.rgb *= 1.0 - uVig * smoothstep(0.25, 0.85, dot(q, q) * 2.0);
+  c.rgb += (h(gl_FragCoord.xy + fract(uTime) * 61.0) - 0.5) * 0.016;
+  gl_FragColor = c;
+}`,
+};
+
+// Cypress and stone pine scattered in groves over the Campagna (deterministic), as two instanced meshes.
+export function buildGroves(r, terrainFn, material) {
+  const Rw = r + 14, grp = new THREE.Group();
+  const hash = (i, k) => { const x = Math.sin(i * 127.1 + k * 311.7) * 43758.5453; return x - Math.floor(x); };
+  const mk = (h, kind) => {
+    const m = new M(); m.tree(0, 0, h, C.green, kind);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(m.P, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(m.N, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(m.K, 3));
+    return g;
+  };
+  const N = 1500, spots = [[], []];
+  for (let i = 0; i < N * 5 && spots[0].length + spots[1].length < N; i++) {
+    const a = hash(i, 1) * Math.PI * 2, d = Rw + 108 + Math.pow(hash(i, 2), 1.5) * 1250;
+    const cx = d * Math.cos(a), cz = d * Math.sin(a);
+    const mask = Math.sin(cx * 0.011 + 1.3) * Math.cos(cz * 0.013 - 0.4) + 0.6 * Math.sin((cx + cz) * 0.027);
+    if (mask < 0.25) continue;
+    const y = terrainFn(cx, cz);
+    if (y < SEA_Y + 2.2) continue;
+    if (Math.abs(terrainFn(cx + 6, cz) - y) + Math.abs(terrainFn(cx, cz + 6) - y) > 3.2) continue;
+    spots[hash(i, 3) > 0.55 ? 1 : 0].push([cx, y - 0.3, cz, 0.75 + hash(i, 4) * 0.7, hash(i, 5) * 6.28]);
+  }
+  const o = new THREE.Object3D();
+  spots.forEach((list, k) => {
+    const im = new THREE.InstancedMesh(mk(k ? 9 : 12, k ? 'pine' : 'cypress'), material, list.length);
+    list.forEach((s, i) => { o.position.set(s[0], s[1], s[2]); o.scale.setScalar(s[3]); o.rotation.y = s[4]; o.updateMatrix(); im.setMatrixAt(i, o.matrix); });
+    im.castShadow = true; im.receiveShadow = true; im.frustumCulled = false; grp.add(im);
+  });
+  return grp;
 }
 
 // Sea & River Water Plane with gentle specular ripple
@@ -292,15 +429,17 @@ export function computeRomanSun(hour = 15.25, season = 'equinox') {
   const dir = new THREE.Vector3(sinAz * cosAlt, Math.sin(alt), cosAz * cosAlt).normalize();
   const shadowNine = 9 / Math.tan(alt); // shadow length in ninths of gnomon (IX.7.1: 8 at Rome equinox noon)
   const warm = 1 - Math.min(1, (Math.sin(alt) - 0.08) / 0.55); // golden hour factor 0..1
+  const L = (a, b, t) => new THREE.Color().lerpColors(new THREE.Color(a), new THREE.Color(b), Math.min(1, t));
   return {
     dir,
     altDeg: (alt * 180) / Math.PI,
     shadowNine,
     warm,
-    sunColor: new THREE.Color().lerpColors(new THREE.Color(0xfffaf0), new THREE.Color(0xffcea0), warm * 0.78),
-    skyColor: new THREE.Color().lerpColors(new THREE.Color(0xefeae0), new THREE.Color(0xe6d7c3), warm * 0.65),
-    hemiTop: new THREE.Color().lerpColors(new THREE.Color(0xffffff), new THREE.Color(0xffe9cf), warm * 0.5),
-    hemiGround: new THREE.Color().lerpColors(new THREE.Color(0xcfc8ba), new THREE.Color(0xb8ab96), warm * 0.5),
+    sunColor: L(0xfff3df, 0xffb877, warm * 0.9),
+    zenith: L(0x2f6fc9, 0x3f63a6, warm * 0.8),
+    horizon: L(0xcfe0ee, 0xf5d2a6, warm * 0.9),
+    hemiTop: L(0xbcd3f0, 0xc9c6dc, warm * 0.7),
+    hemiGround: L(0xd8c6a4, 0xcfa983, warm * 0.6),
   };
 }
 

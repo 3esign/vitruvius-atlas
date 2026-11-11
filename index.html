@@ -23,80 +23,103 @@
 <script type="importmap">{ "imports": { "three": "./vendor/three/build/three.module.js", "three/addons/": "./vendor/three/addons/" } }</script>
 </head>
 <body>
+<script>if (location.hash.length < 3 &&!/nointro/.test(location.search)) document.body.className = 'intro';</script>
 <main id="stage">
   <canvas id="c"></canvas>
+  <div id="veil" aria-hidden="true"></div>
   <div id="crosshair" aria-hidden="true"></div>
   <div id="labels"></div>
 
   <header id="head">
-    <div class="head-top">
-      <a class="kicker" href="#/">Vitruvius · De Architectura</a>
-      <a class="sig-badge" href="#/about" title="Methodology, Sources &amp; Citation">PhD Poturak Semir</a>
-    </div>
+    <a class="kicker" href="#/">Vitruvius · De Architectura · Libri Decem</a>
     <h1><a href="#/" class="title-link">The City of the Ten Books</a></h1>
-    <div id="by" role="tablist" aria-label="Arrange the city"></div>
-    <p id="bynote"></p>
-    <nav id="qnav" aria-label="Scholarly indexes">
-      <a href="#/tours">Tours</a>
-      <a href="#/books">Books I–X</a>
-      <a href="#/entities">Index</a>
-      <a href="#/plates">Plates (61)</a>
-      <button type="button" id="openPlateBtn" class="link-btn" title="Interactive Book III.5 Ionic Column Plate (78 sentence-to-stone bindings)">III.5 Ionic Plate</button>
-    </nav>
-  </header>
-
-  <div id="viewbar" role="toolbar" aria-label="Spatial camera modes">
-    <div id="camModes" class="seg">
-      <button type="button" data-cam="3d" aria-pressed="true" title="Scaenographia — Aerial 3D maquette (V)">3D Maquette</button>
-      <button type="button" data-cam="walk" aria-pressed="false" title="Ambulatio — First-person street walk at 1.70 m eye height (F)">Walk Street (FPS)</button>
-      <button type="button" data-cam="plan" aria-pressed="false" title="Ichnographia — True orthographic architectural plan">Plan Blueprint</button>
+    <a class="sig-badge" href="#/about" title="Method, sources and citation">a spatial edition by <b>PhD Poturak Semir</b></a>
+    <div class="arrange">
+      <span class="arr-lbl">Arrange by</span>
+      <div id="by" role="tablist" aria-label="Arrange the city"></div>
     </div>
-    <button type="button" id="togglePanel" title="Collapse or expand scholarly panel (])" aria-label="Toggle scholarly panel">Panel ›</button>
-  </div>
+    <p id="bynote"></p>
+  </header>
 
   <div id="tourbar" hidden></div>
 
   <footer id="dock">
     <div id="keys"></div>
+    <div id="viewbar" role="toolbar" aria-label="Ways of seeing">
+      <div id="camModes" class="seg">
+        <button type="button" data-cam="3d" aria-pressed="true" title="Scaenographia: the city as a model, from the air (V)">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 14l7-4 7 4-7 4zM3 14V8l7-4 7 4v6M10 4v6"/></svg><span>Maquette</span></button>
+        <button type="button" data-cam="walk" aria-pressed="false" title="Ambulatio: walk the streets at eye height (F)">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="4" r="1.7"/><path d="M10 6.5v5.5l-2.5 5.5M10 12l3 5.5M6.5 9.5L10 8l3.5 2.5"/></svg><span>Walk</span></button>
+        <button type="button" data-cam="plan" aria-pressed="false" title="Ichnographia: true ground plan, to scale">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3.5" y="3.5" width="13" height="13"/><path d="M3.5 9h7v7.5M10.5 3.5V6M13 9h3.5"/></svg><span>Plan</span></button>
+      </div>
+    </div>
     <div id="scaleBar" hidden>
       <div class="scale-line"><span id="scalePx"></span></div>
       <div id="scaleTxt">100 pedes · 29.6 m</div>
     </div>
-    <div id="sunDock" aria-label="Roman Solar Analemma (Book IX.7)">
-      <span class="sun-lbl" title="Latitude of Rome (41.9° N) — Book IX.7 Analemma">Sun · Rome</span>
-      <select id="sunSeason" aria-label="Solar season">
-        <option value="equinox">Equinox (IX.7)</option>
-        <option value="summer">Solstice +</option>
-        <option value="winter">Solstice −</option>
+    <div id="sunDock" aria-label="The sun over Rome (Book IX.7)">
+      <span class="sun-lbl" title="Sun at the latitude of Rome, 41.9° N. Book IX.7: at the equinox the gnomon of 9 parts throws a shadow of 8.">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="3.4"/><path d="M10 1.5v3M10 15.5v3M1.5 10h3M15.5 10h3M4 4l2.1 2.1M13.9 13.9L16 16M4 16l2.1-2.1M13.9 6.1L16 4"/></svg></span>
+      <select id="sunSeason" aria-label="Season">
+        <option value="equinox">Equinox</option>
+        <option value="summer">Summer solstice</option>
+        <option value="winter">Winter solstice</option>
       </select>
-      <input id="sunHour" type="range" min="6.25" max="18.25" step="0.05" value="15.25" aria-label="Solar hour">
+      <input id="sunHour" type="range" min="6.25" max="18.25" step="0.05" value="15.25" aria-label="Hour of the day">
       <span id="sunReadout">15:15</span>
-      <button type="button" id="sunPlay" title="Animate Roman solar arc">▶</button>
-      <button type="button" id="soundBtn" title="Toggle Pythagorean harmonic chimes &amp; breeze (M)" aria-pressed="false">Sound Off</button>
+      <button type="button" id="sunPlay" title="Let the day run">▶</button>
+      <button type="button" id="soundBtn" title="Wind and the consonances of Book V.4 (M)" aria-pressed="false">Sound off</button>
     </div>
   </footer>
 
+  <button type="button" id="togglePanel" title="Hide or show the reading panel (])" aria-label="Toggle reading panel">›</button>
   <div id="tip"></div>
+
+  <section id="intro">
+    <div class="intro-in">
+      <p class="intro-k">Marcus Vitruvius Pollio · De Architectura · c. 25 BC</p>
+      <h2>The City of<br>the Ten Books</h2>
+      <p class="intro-lead">The oldest surviving treatise on architecture, rebuilt as a city you can enter. Every one of its 729 passages has a place; every building is shaped by the rule that describes it.</p>
+      <div class="intro-act">
+        <button type="button" id="enterBtn" class="intro-btn" disabled>Building the city…</button>
+        <button type="button" id="enterTour" class="intro-btn ghost">Take a guided tour</button>
+      </div>
+      <p class="intro-sig">A spatial edition by <b>PhD Poturak Semir</b><span>English of M. H. Morgan, 1914 · Latin of F. Krohn, 1912</span></p>
+    </div>
+  </section>
 </main>
 
 <aside id="panel" aria-live="polite">
   <div id="pbar">
     <div class="search-wrap">
-      <input id="q" type="search" placeholder="Search English, Latin, page (p. 135), rule, term… (/)" aria-label="Search corpus">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.2"/><path d="M12.5 12.5L17 17"/></svg>
+      <input id="q" type="search" placeholder="Search the text, Latin, a page, a rule…" aria-label="Search the ten books">
       <button type="button" id="qClear" hidden aria-label="Clear search">×</button>
     </div>
     <div id="langBar" class="seg" role="group" aria-label="Text edition">
       <button type="button" data-lang="en" aria-pressed="true" title="M. H. Morgan (1914), Harvard University Press">EN</button>
-      <button type="button" data-lang="la" aria-pressed="false" title="F. Krohn (1912), Teubner Original Latin">LAT</button>
-      <button type="button" data-lang="bi" aria-pressed="false" title="Parallel Bilingual Edition (Morgan 1914 + Krohn 1912)">EN+LAT</button>
+      <button type="button" data-lang="la" aria-pressed="false" title="F. Krohn (1912), Teubner: the Latin">LA</button>
+      <button type="button" data-lang="bi" aria-pressed="false" title="English and Latin side by side">EN·LA</button>
     </div>
   </div>
+  <nav id="qnav" aria-label="Indexes">
+    <a href="#/">City</a>
+    <a href="#/tours">Tours</a>
+    <a href="#/books">Books I–X</a>
+    <a href="#/entities">Index</a>
+    <a href="#/plates">Plates</a>
+    <button type="button" id="openPlateBtn" class="link-btn" title="Book III.5: one Ionic column, 78 sentences bound to stone">Ionic plate</button>
+    <a href="#/about">About</a>
+  </nav>
   <div id="page"><p class="load">Building the city from the ten books…</p></div>
   <footer id="colophon">
-    <span><b>Vitruvius · The City of the Ten Books</b> — Spatial Edition by <a href="#/about">PhD Poturak Semir</a></span>
+    <span><b>The City of the Ten Books</b> · spatial edition by <a href="#/about">PhD Poturak Semir</a></span>
     <span id="stat"></span>
   </footer>
 </aside>
+
 
 <div id="plateModal" class="modal" hidden role="dialog" aria-modal="true" aria-label="Book III.5 Interactive Ionic Plate">
   <div class="modal-card">
